@@ -21,7 +21,7 @@ from utils.evaluator import Evaluator, compute_metrics, get_text_normalizer, pri
 # ============================================================
 MODEL_NAME = "whisper-large-v3-original"
 DATASET_NAME = "en"
-DTYPE = "float16"  # baseline 先优先跑通；如果你只评少量样本，再尝试 float32
+DTYPE = "float16"
 DEVICE = None
 
 MODEL_ROOT = "./models"
@@ -30,13 +30,12 @@ GPU_IDS = [0, 1, 2, 3]
 USE_MULTI_GPU_EVAL = True
 
 SPLIT = "test"
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 NUM_SAMPLES = None
 NUM_WORKERS = 4
-TEXT_FIELD = "raw_transcription"  # 如果你的数据里有更规范的 transcription，可改成 "transcription"
-NUM_BEAMS = 5
-GENERATION_BATCH_SIZE = 1  # beam search 显存很重，large-v3 建议先从 1 开始
-COMPUTE_LOSS = False  # 先把 WER/CER 跑通；要算 loss 再改成 True
+TEXT_FIELD = "raw_transcription"
+GENERATION_BATCH_SIZE = 8
+COMPUTE_LOSS = False
 # ============================================================
 
 
@@ -69,7 +68,6 @@ def evaluate_single_gpu():
         task="transcribe",
         dtype=torch_dtype,
         generation_kwargs={
-            "num_beams": NUM_BEAMS,
             "generation_batch_size": GENERATION_BATCH_SIZE,
         },
         compute_loss=COMPUTE_LOSS,
@@ -111,7 +109,6 @@ def _evaluate_worker(worker_rank, gpu_id, result_dir, num_shards):
         task="transcribe",
         dtype=torch_dtype,
         generation_kwargs={
-            "num_beams": NUM_BEAMS,
             "generation_batch_size": GENERATION_BATCH_SIZE,
         },
         compute_loss=COMPUTE_LOSS,
@@ -150,14 +147,14 @@ def evaluate_multi_gpu():
         all_references = []
         all_predictions = []
         total_loss = 0.0
-        total_batches = 0
+        total_loss_batches = 0
 
         for worker_rank in range(num_shards):
             result = torch.load(os.path.join(result_dir, f"worker_{worker_rank}.pt"))
             all_references.extend(result["references"])
             all_predictions.extend(result["predictions"])
             total_loss += result["total_loss"]
-            total_batches += result["num_batches"]
+            total_loss_batches += result.get("num_loss_batches", result["num_batches"])
 
     normalizer = get_text_normalizer(DATASET_NAME)
     cer, wer, _, _ = compute_metrics(
@@ -165,7 +162,7 @@ def evaluate_multi_gpu():
         predictions=all_predictions,
         normalizer=normalizer,
     )
-    avg_loss = total_loss / total_batches
+    avg_loss = total_loss / total_loss_batches if total_loss_batches > 0 else float("nan")
     print_evaluation_summary(avg_loss, cer, wer, all_references, all_predictions, log=True)
     return cer, wer, avg_loss
 

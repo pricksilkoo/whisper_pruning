@@ -34,10 +34,9 @@ MODEL_ROOT = "./models"
 DATA_ROOT = "./data/fleurs_full"
 GPU_IDS = [0, 1, 2, 3]
 USE_MULTI_GPU_EVAL = True
-TEXT_FIELD = "raw_transcription"  # 如果你的数据里有更规范的 transcription，可改成 "transcription"
-EVAL_NUM_BEAMS = 5
-EVAL_GENERATION_BATCH_SIZE = 1  # beam search 显存更重，生成阶段单独切小 batch
-EVAL_COMPUTE_LOSS = False  # 先稳住 WER/CER；如需 loss 再打开
+TEXT_FIELD = "raw_transcription"
+EVAL_GENERATION_BATCH_SIZE = 8
+EVAL_COMPUTE_LOSS = False
 
 # 用来收集激活值的小样本数据
 PROFILE_SPLIT = "train"
@@ -125,7 +124,6 @@ def evaluate_current_model(model, processor, device, torch_dtype):
         task="transcribe",
         dtype=torch_dtype,
         generation_kwargs={
-            "num_beams": EVAL_NUM_BEAMS,
             "generation_batch_size": EVAL_GENERATION_BATCH_SIZE,
         },
         compute_loss=EVAL_COMPUTE_LOSS,
@@ -170,7 +168,6 @@ def _evaluate_checkpoint_worker(worker_rank, gpu_id, checkpoint_path, result_dir
         task="transcribe",
         dtype=torch_dtype,
         generation_kwargs={
-            "num_beams": EVAL_NUM_BEAMS,
             "generation_batch_size": EVAL_GENERATION_BATCH_SIZE,
         },
         compute_loss=EVAL_COMPUTE_LOSS,
@@ -209,14 +206,14 @@ def evaluate_checkpoint_multi_gpu(checkpoint_path):
         all_references = []
         all_predictions = []
         total_loss = 0.0
-        total_batches = 0
+        total_loss_batches = 0
 
         for worker_rank in range(num_shards):
             result = torch.load(os.path.join(result_dir, f"worker_{worker_rank}.pt"))
             all_references.extend(result["references"])
             all_predictions.extend(result["predictions"])
             total_loss += result["total_loss"]
-            total_batches += result["num_batches"]
+            total_loss_batches += result.get("num_loss_batches", result["num_batches"])
 
     normalizer = get_text_normalizer(DATASET_NAME)
     cer, wer, _, _ = compute_metrics(
@@ -224,7 +221,7 @@ def evaluate_checkpoint_multi_gpu(checkpoint_path):
         predictions=all_predictions,
         normalizer=normalizer,
     )
-    avg_loss = total_loss / total_batches
+    avg_loss = total_loss / total_loss_batches if total_loss_batches > 0 else float("nan")
     print_evaluation_summary(avg_loss, cer, wer, all_references, all_predictions, log=True)
     return cer, wer, avg_loss
 

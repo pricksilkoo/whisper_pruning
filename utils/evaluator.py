@@ -86,7 +86,7 @@ class Evaluator:
             del generated_ids, chunk_input_features
             if chunk_attention_mask is not None:
                 del chunk_attention_mask
-            if torch.cuda.is_available():
+            if chunk_size < batch_size and torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
         return predictions
@@ -156,6 +156,8 @@ class Evaluator:
                 "avg_loss": avg_loss,
                 "total_loss": total_loss,
                 "num_batches": len(self.dataloader),
+                "num_loss_batches": len(self.dataloader) if self.compute_loss else 0,
+                "compute_loss": self.compute_loss,
                 "references": references,
                 "predictions": predictions,
                 "clean_references": clean_references,
