@@ -1,0 +1,122 @@
+"""
+这个文件只放少量“重复但简单”的辅助函数。
+
+你平时主要修改这些顶层脚本就够了：
+- evaluate_model.py
+- one_time_pruning_evaluation.py
+- visualize_scores.py
+- visualize_distributions.py
+- visualize_owl_onetimepruning.py
+
+通常不需要改这个文件。
+"""
+
+import os
+
+import torch
+from transformers import WhisperForConditionalGeneration, WhisperProcessor
+
+from utils.data_loader import get_whisper_dataloader
+
+
+DTYPE_MAP = {
+    "float16": torch.float16,
+    "float32": torch.float32,
+    "bfloat16": torch.bfloat16,
+}
+
+
+def get_torch_dtype(dtype_name="float16"):
+    """把字符串 dtype 转成 PyTorch 能识别的 dtype。"""
+    if isinstance(dtype_name, torch.dtype):
+        return dtype_name
+
+    dtype_name = dtype_name.lower()
+    if dtype_name not in DTYPE_MAP:
+        raise ValueError(f"不支持的 dtype: {dtype_name}")
+    return DTYPE_MAP[dtype_name]
+
+
+def get_device(device=None):
+    """
+    自动决定设备。
+
+    - 如果你手动传了 device，就优先用它
+    - 否则优先 CUDA
+    - 再否则 MPS
+    - 最后 CPU
+    """
+    if device is not None:
+        return torch.device(device)
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def get_model_path(model_name, model_root="./models"):
+    return os.path.join(model_root, model_name)
+
+
+def get_data_path(dataset_name, data_root="./data/fleurs_full"):
+    return os.path.join(data_root, dataset_name)
+
+
+def load_model_and_processor(
+    model_name,
+    dtype="float16",
+    device=None,
+    model_root="./models",
+):
+    """
+    加载 Whisper 模型和 processor。
+
+    返回:
+    - model
+    - processor
+    - device
+    - torch_dtype
+    """
+    torch_dtype = get_torch_dtype(dtype)
+    device = get_device(device)
+    model_path = get_model_path(model_name, model_root=model_root)
+
+    print(f"🚀 正在加载模型: {model_path}")
+    model = WhisperForConditionalGeneration.from_pretrained(
+        model_path,
+        torch_dtype=torch_dtype,
+    ).to(device)
+    processor = WhisperProcessor.from_pretrained(model_path)
+
+    return model, processor, device, torch_dtype
+
+
+def load_data(
+    dataset_name,
+    processor,
+    split="test",
+    batch_size=4,
+    num_samples=None,
+    data_root="./data/fleurs_full",
+    shuffle=None,
+):
+    """
+    加载一个 Whisper dataloader。
+
+    你最常改的就是:
+    - split
+    - batch_size
+    - num_samples
+    """
+    data_path = get_data_path(dataset_name, data_root=data_root)
+    print(f"📂 正在加载数据集: {data_path} [{split}]")
+
+    return get_whisper_dataloader(
+        data_path=data_path,
+        processor=processor,
+        split=split,
+        batch_size=batch_size,
+        num_samples=num_samples,
+        shuffle=shuffle,
+    )

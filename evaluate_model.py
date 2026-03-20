@@ -1,33 +1,61 @@
 """
-这是一个“快捷脚本”。
+这个文件用于“只做基线评测”。
 
-它的作用不是自己实现评测逻辑，
-而是提前写好一组默认参数，然后调用统一流水线 `run_evaluation(...)`。
-
-如果你现在不想学习 CLI，用这个文件也可以直接跑基线评测。
+以后你最常改的地方，就是下面这段配置。
+改完后直接运行：
+    python evaluate_model.py
 """
 
-from whisper_pruning.config import DataLoaderConfig, EvaluationRunConfig, ExperimentConfig
-from whisper_pruning.pipelines import run_evaluation
+from experiment_helpers import load_data, load_model_and_processor
+from utils.evaluator import Evaluator
+
+
+# ============================================================
+# 只改这里
+# ============================================================
+MODEL_NAME = "whisper-large-v3-original"
+DATASET_NAME = "en"
+DTYPE = "float16"
+DEVICE = None
+
+MODEL_ROOT = "./models"
+DATA_ROOT = "./data/fleurs_full"
+
+SPLIT = "test"
+BATCH_SIZE = 64
+NUM_SAMPLES = None
+# ============================================================
+
+
+def main():
+    model, processor, device, torch_dtype = load_model_and_processor(
+        model_name=MODEL_NAME,
+        dtype=DTYPE,
+        device=DEVICE,
+        model_root=MODEL_ROOT,
+    )
+
+    dataloader = load_data(
+        dataset_name=DATASET_NAME,
+        processor=processor,
+        split=SPLIT,
+        batch_size=BATCH_SIZE,
+        num_samples=NUM_SAMPLES,
+        data_root=DATA_ROOT,
+        shuffle=False,
+    )
+
+    evaluator = Evaluator(
+        model=model,
+        processor=processor,
+        dataloader=dataloader,
+        device=device,
+        language=DATASET_NAME,
+        task="transcribe",
+        dtype=torch_dtype,
+    )
+    evaluator.evaluate()
 
 
 if __name__ == "__main__":
-    # 这里的 config 就是在描述:
-    # “我要评测哪个模型、哪个数据集、用什么 batch size”
-    config = EvaluationRunConfig(
-        experiment=ExperimentConfig(
-            model_name="whisper-large-v3-original",
-            dataset_name="en",
-            dtype="float16",
-        ),
-        data=DataLoaderConfig(
-            split="test",
-            batch_size=64,
-            num_samples=None,
-            shuffle=False,
-        ),
-    )
-
-    # 真正的评测实现不在这个文件里，
-    # 而是在 whisper_pruning/pipelines.py 里。
-    run_evaluation(config)
+    main()
