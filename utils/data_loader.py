@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Union
 from datasets import load_from_disk
 
 #处理原始数据
-def prepare_dataset(batch, processor):
+def prepare_dataset(batch, processor, text_field="raw_transcription"):
     audio = batch["audio"]
     inputs = processor.feature_extractor(
         audio["array"],
@@ -17,7 +17,11 @@ def prepare_dataset(batch, processor):
     if "attention_mask" in inputs:
         batch["attention_mask"] = inputs.attention_mask[0]
 
-    batch["labels"] = processor.tokenizer(batch["raw_transcription"]).input_ids
+    if text_field not in batch:
+        raise KeyError(f"数据里找不到文本字段: {text_field}")
+
+    batch["reference_text"] = batch[text_field]
+    batch["labels"] = processor.tokenizer(batch["reference_text"]).input_ids
 
     return batch
 
@@ -45,6 +49,7 @@ class DataCollatorSpeechSeq2SeqWithPadding:
         if (labels[:, 0] == self.processor.tokenizer.bos_token_id).all().cpu().item():
             labels = labels[:, 1:]
         batch["labels"] = labels
+        batch["reference_texts"] = [feature["reference_text"] for feature in features]
 
         return batch
 
@@ -79,6 +84,7 @@ def get_whisper_dataloader(
     pin_memory=None,
     shard_id=None,
     num_shards=None,
+    text_field="raw_transcription",
 ):
     """
     参数说明:
@@ -102,7 +108,7 @@ def get_whisper_dataloader(
         dataset = dataset.shard(num_shards=num_shards, index=shard_id, contiguous=True)
 
     dataset = dataset.map(
-        lambda x: prepare_dataset(x, processor),
+        lambda x: prepare_dataset(x, processor, text_field=text_field),
         remove_columns=dataset.column_names,
         num_proc=1,
         desc="提取特征",

@@ -41,7 +41,7 @@ class Evaluator:
 
     def __init__(self, model, processor, dataloader, device, 
                  language='en', task="transcribe", dtype=None,
-                 normalizer=None):
+                 normalizer=None, generation_kwargs=None):
         self.model = model
         self.processor = processor
         self.dataloader = dataloader
@@ -50,6 +50,7 @@ class Evaluator:
         self.task=task
         self.language=language
         self.dtype=dtype or next(model.parameters()).dtype
+        self.generation_kwargs = generation_kwargs or {}
 
     def evaluate(self, log = True, return_details=False):
         """
@@ -80,22 +81,30 @@ class Evaluator:
 
                 # 这里不再复用 forward 拿到的 encoder_outputs，
                 # 直接让 generate 自己重新走一遍编码，优先保证评测正确。
+                generate_kwargs = {
+                    "input_features": input_features,
+                    "attention_mask": attention_mask,
+                    "language": self.language,
+                    "task": self.task,
+                }
+                generate_kwargs.update(self.generation_kwargs)
+
                 generated_ids = self.model.generate(
-                    input_features=input_features,
-                    attention_mask=attention_mask,
-                    language=self.language,     
-                    task=self.task,             
+                    **generate_kwargs,
                 )
                 transcriptions = self.processor.batch_decode(generated_ids, skip_special_tokens=True)
                 predictions.extend(transcriptions)
-                #文本对比
 
-                # labels 里 padding 部分通常是 -100，不能直接拿去 decode，
-                # 所以先替换成 pad_token_id。
-                labels_for_decode = labels.clone()
-                labels_for_decode[labels_for_decode == -100] = self.processor.tokenizer.pad_token_id
-                real_texts = self.processor.batch_decode(labels_for_decode, skip_special_tokens=True)
-                references.extend(real_texts)
+                # 评测时优先使用数据集原始参考文本，
+                # 不再把 labels 反解码回字符串，避免 tokenizer 往返引入口径偏差。
+                reference_texts = batch.get("reference_texts")
+                if reference_texts is not None:
+                    references.extend(reference_texts)
+                else:
+                    labels_for_decode = labels.clone()
+                    labels_for_decode[labels_for_decode == -100] = self.processor.tokenizer.pad_token_id
+                    real_texts = self.processor.batch_decode(labels_for_decode, skip_special_tokens=True)
+                    references.extend(real_texts)
 
         cer, wer, clean_references, clean_predictions = compute_metrics(
             references=references,

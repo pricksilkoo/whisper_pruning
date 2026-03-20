@@ -34,6 +34,8 @@ MODEL_ROOT = "./models"
 DATA_ROOT = "./data/fleurs_full"
 GPU_IDS = [0, 1, 2, 3]
 USE_MULTI_GPU_EVAL = True
+TEXT_FIELD = "raw_transcription"  # 如果你的数据里有更规范的 transcription，可改成 "transcription"
+EVAL_NUM_BEAMS = 5
 
 # 用来收集激活值的小样本数据
 PROFILE_SPLIT = "train"
@@ -109,6 +111,7 @@ def evaluate_current_model(model, processor, device, torch_dtype):
         data_root=DATA_ROOT,
         shuffle=False,
         num_workers=EVAL_NUM_WORKERS,
+        text_field=TEXT_FIELD,
     )
 
     evaluator = Evaluator(
@@ -119,6 +122,7 @@ def evaluate_current_model(model, processor, device, torch_dtype):
         language=DATASET_NAME,
         task="transcribe",
         dtype=torch_dtype,
+        generation_kwargs={"num_beams": EVAL_NUM_BEAMS},
     )
     return evaluator.evaluate()
 
@@ -148,6 +152,7 @@ def _evaluate_checkpoint_worker(worker_rank, gpu_id, checkpoint_path, result_dir
         num_workers=0,
         shard_id=worker_rank,
         num_shards=num_shards,
+        text_field=TEXT_FIELD,
     )
 
     evaluator = Evaluator(
@@ -158,6 +163,7 @@ def _evaluate_checkpoint_worker(worker_rank, gpu_id, checkpoint_path, result_dir
         language=DATASET_NAME,
         task="transcribe",
         dtype=torch_dtype,
+        generation_kwargs={"num_beams": EVAL_NUM_BEAMS},
     )
     result = evaluator.evaluate(log=False, return_details=True)
     torch.save(result, os.path.join(result_dir, f"worker_{worker_rank}.pt"))
@@ -235,6 +241,7 @@ def main():
         random_subset=PROFILE_RANDOM_SUBSET,
         seed=PROFILE_SAMPLE_SEED,
         num_workers=PROFILE_NUM_WORKERS,
+        text_field=TEXT_FIELD,
     )
 
     profiler = WAprofiler(model, profile_loader, device=device, dtype=torch_dtype)

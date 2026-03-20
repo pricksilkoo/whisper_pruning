@@ -21,7 +21,7 @@ from utils.evaluator import Evaluator, compute_metrics, get_text_normalizer, pri
 # ============================================================
 MODEL_NAME = "whisper-large-v3-original"
 DATASET_NAME = "en"
-DTYPE = "float16"
+DTYPE = "float32"  # 对齐 baseline 时更稳；确认后可改回 float16 提速
 DEVICE = None
 
 MODEL_ROOT = "./models"
@@ -33,6 +33,8 @@ SPLIT = "test"
 BATCH_SIZE = 64
 NUM_SAMPLES = None
 NUM_WORKERS = 4
+TEXT_FIELD = "raw_transcription"  # 如果你的数据里有更规范的 transcription，可改成 "transcription"
+NUM_BEAMS = 5
 # ============================================================
 
 
@@ -53,6 +55,7 @@ def evaluate_single_gpu():
         data_root=DATA_ROOT,
         shuffle=False,
         num_workers=NUM_WORKERS,
+        text_field=TEXT_FIELD,
     )
 
     evaluator = Evaluator(
@@ -63,6 +66,7 @@ def evaluate_single_gpu():
         language=DATASET_NAME,
         task="transcribe",
         dtype=torch_dtype,
+        generation_kwargs={"num_beams": NUM_BEAMS},
     )
     return evaluator.evaluate()
 
@@ -89,6 +93,7 @@ def _evaluate_worker(worker_rank, gpu_id, result_dir, num_shards):
         num_workers=0,
         shard_id=worker_rank,
         num_shards=num_shards,
+        text_field=TEXT_FIELD,
     )
 
     evaluator = Evaluator(
@@ -99,6 +104,7 @@ def _evaluate_worker(worker_rank, gpu_id, result_dir, num_shards):
         language=DATASET_NAME,
         task="transcribe",
         dtype=torch_dtype,
+        generation_kwargs={"num_beams": NUM_BEAMS},
     )
     result = evaluator.evaluate(log=False, return_details=True)
     torch.save(result, os.path.join(result_dir, f"worker_{worker_rank}.pt"))

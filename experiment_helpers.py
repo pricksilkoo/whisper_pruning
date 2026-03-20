@@ -121,6 +121,7 @@ def load_data(
     pin_memory=None,
     shard_id=None,
     num_shards=None,
+    text_field="raw_transcription",
 ):
     """
     加载一个 Whisper dataloader。
@@ -146,4 +147,5 @@ def load_data(
         pin_memory=pin_memory,
         shard_id=shard_id,
         num_shards=num_shards,
+        text_field=text_field,
     )
