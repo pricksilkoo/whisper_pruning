@@ -106,8 +106,9 @@ def get_whisper_dataloader(
         remove_columns=dataset.column_names,
         num_proc=1,
         desc="提取特征",
+        keep_in_memory=True,
+        load_from_cache_file=False,
     )
-    dataset.cleanup_cache_files()
 
     collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor)
 

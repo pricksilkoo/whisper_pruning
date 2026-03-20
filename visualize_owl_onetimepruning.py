@@ -72,7 +72,7 @@ def _sweep_worker(worker_rank, gpu_id, worker_grid, result_path):
         shuffle=True,
         random_subset=PROFILE_RANDOM_SUBSET,
         seed=PROFILE_SAMPLE_SEED,
-        num_workers=PROFILE_NUM_WORKERS,
+        num_workers=0,
     )
 
     profiler = WAprofiler(model, profile_loader, device=device, dtype=torch_dtype)
@@ -87,7 +87,7 @@ def _sweep_worker(worker_rank, gpu_id, worker_grid, result_path):
         num_samples=EVAL_NUM_SAMPLES,
         data_root=DATA_ROOT,
         shuffle=False,
-        num_workers=EVAL_NUM_WORKERS,
+        num_workers=0,
     )
 
     scorer = Scorer()

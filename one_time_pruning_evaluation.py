@@ -145,7 +145,7 @@ def _evaluate_checkpoint_worker(worker_rank, gpu_id, checkpoint_path, result_dir
         num_samples=EVAL_NUM_SAMPLES,
         data_root=DATA_ROOT,
         shuffle=False,
-        num_workers=EVAL_NUM_WORKERS,
+        num_workers=0,
         shard_id=worker_rank,
         num_shards=num_shards,
     )
