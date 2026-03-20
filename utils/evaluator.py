@@ -5,6 +5,14 @@ import jiwer
 from whisper.normalizers import BasicTextNormalizer, EnglishTextNormalizer
 
 class Evaluator:
+    """
+    这个类负责最终评测模型。
+
+    它会做两件事:
+    1. 前向传播拿到训练式 loss
+    2. generate 解码拿到真实转录结果，再计算 CER / WER
+    """
+
     def __init__(self, model, processor, dataloader, device, 
                  language='en', task="transcribe", dtype=None,
                  normalizer=None):
@@ -18,6 +26,7 @@ class Evaluator:
         self.dtype=dtype or next(model.parameters()).dtype
 
     def _build_normalizer(self, language):
+        # 英文用更强的英文标准化器，其他语言先用基础版。
         if language and language.lower().startswith("en"):
             return EnglishTextNormalizer()
         return BasicTextNormalizer()
@@ -56,11 +65,15 @@ class Evaluator:
                 transcriptions = self.processor.batch_decode(generated_ids, skip_special_tokens=True)
                 predictions.extend(transcriptions)
                 #文本对比
+
+                # labels 里 padding 部分通常是 -100，不能直接拿去 decode，
+                # 所以先替换成 pad_token_id。
                 labels_for_decode = labels.clone()
                 labels_for_decode[labels_for_decode == -100] = self.processor.tokenizer.pad_token_id
                 real_texts = self.processor.batch_decode(labels_for_decode, skip_special_tokens=True)
                 references.extend(real_texts)
 
+        # 先做文本标准化，再计算误差率。
         clean_references = [self.normalizer(text) for text in references]
         clean_predictions = [self.normalizer(text) for text in predictions]
         # 计算cer，wer，avgloss

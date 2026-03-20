@@ -17,6 +17,15 @@ from .config import (
 
 
 def _project_paths(args) -> ProjectPaths:
+    """
+    把命令行里的路径参数整理成 ProjectPaths。
+
+    例如:
+    --models-root /remote/models
+    --data-root /remote/data
+
+    都会在这里被包装成一个统一对象。
+    """
     return ProjectPaths(
         model_root=Path(args.models_root) if args.models_root else None,
         data_root=Path(args.data_root) if args.data_root else None,
@@ -25,6 +34,11 @@ def _project_paths(args) -> ProjectPaths:
 
 
 def _experiment_config(args) -> ExperimentConfig:
+    """
+    把命令行参数里“公共的实验信息”整理成 ExperimentConfig。
+
+    这样后续流程函数只收一个 config，不需要接一长串零散参数。
+    """
     return ExperimentConfig(
         model_name=args.model,
         dataset_name=args.dataset,
@@ -37,6 +51,7 @@ def _experiment_config(args) -> ExperimentConfig:
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
+    # 这些参数几乎所有命令都会用到，所以抽成一个公共函数统一添加。
     parser.add_argument("--model", default="whisper-large-v3-original")
     parser.add_argument("--dataset", default="en")
     parser.add_argument("--dtype", default="float16", choices=["float16", "float32", "bfloat16"])
@@ -49,9 +64,16 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """
+    这个函数定义整个命令行界面。
+
+    你可以把这里理解成:
+    “这个项目允许用户在命令行里输入哪些命令，哪些参数。”
+    """
     parser = argparse.ArgumentParser(description="Whisper pruning experiment runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # evaluate: 只做评测
     evaluate_parser = subparsers.add_parser("evaluate", help="只做模型评测")
     _add_common_args(evaluate_parser)
     evaluate_parser.add_argument("--split", default="test")
@@ -59,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate_parser.add_argument("--num-samples", type=int, default=None)
     evaluate_parser.add_argument("--shuffle", action="store_true")
 
+    # prune-once: 做一次收集激活值 -> 打分 -> 剪枝 -> 评测
     prune_parser = subparsers.add_parser("prune-once", help="执行一次剪枝并评测")
     _add_common_args(prune_parser)
     prune_parser.add_argument("--profile-split", default="train")
@@ -76,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     prune_parser.add_argument("--n", type=int, default=2)
     prune_parser.add_argument("--m", type=int, default=4)
 
+    # plot-scores: 可视化层分数或保留率
     score_parser = subparsers.add_parser("plot-scores", help="可视化层分数")
     _add_common_args(score_parser)
     score_parser.add_argument("--split", default="test")
@@ -88,6 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     score_parser.add_argument("--plot", default="retention", choices=["scores", "retention"])
     score_parser.add_argument("--filename", default=None)
 
+    # plot-distributions: 画某一层的权重 / 激活 / 乘积分布
     distribution_parser = subparsers.add_parser("plot-distributions", help="可视化层分布")
     _add_common_args(distribution_parser)
     distribution_parser.add_argument("--split", default="test")
@@ -95,6 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     distribution_parser.add_argument("--num-samples", type=int, default=8)
     distribution_parser.add_argument("--layer", default=None)
 
+    # sweep-owl: 扫描多组 OWL 参数，再统一画图
     sweep_parser = subparsers.add_parser("sweep-owl", help="扫描 OWL 参数并画图")
     _add_common_args(sweep_parser)
     sweep_parser.add_argument("--profile-split", default="train")
@@ -121,11 +147,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> None:
+    """
+    这是 CLI 的总调度函数。
+
+    主逻辑很简单:
+    1. 先 parse 参数
+    2. 再把参数组装成 config
+    3. 根据不同 command 调用不同流水线
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
     experiment = _experiment_config(args)
 
     if args.command == "evaluate":
+        # 这里才真正导入 run_evaluation，
+        # 这样即使环境里缺少某些重依赖，`python main.py --help` 也不会提前崩。
         from .pipelines import run_evaluation
 
         config = EvaluationRunConfig(
@@ -144,6 +180,8 @@ def main(argv=None) -> None:
     if args.command == "prune-once":
         from .pipelines import run_one_shot_pruning
 
+        # 命令行参数 -> 配置对象
+        # 这是整个“脚本参数”到“实验配置”的转换过程。
         config = OneShotPruningRunConfig(
             experiment=experiment,
             profile_data=DataLoaderConfig(
@@ -185,6 +223,10 @@ def main(argv=None) -> None:
         from .pipelines import run_profile
         from .plotting import visualize_network_scores
 
+        # plot-scores 的思路是:
+        # 1. 先跑 profiler
+        # 2. 再根据 profiler 结果算分数
+        # 3. 最后画图
         config = ProfileRunConfig(
             experiment=experiment,
             data=DataLoaderConfig(
@@ -219,6 +261,7 @@ def main(argv=None) -> None:
         from .pipelines import run_profile
         from .plotting import visualize_distributions
 
+        # 这里和 plot-scores 类似，区别只是最后画的图不同。
         config = ProfileRunConfig(
             experiment=experiment,
             data=DataLoaderConfig(
@@ -243,6 +286,7 @@ def main(argv=None) -> None:
         from .pipelines import run_owl_sweep
         from .plotting import plot_fixed_arr, plot_fixed_level
 
+        # 这个命令会把一批参数打包，然后交给 run_owl_sweep 去枚举运行。
         config = OwlSweepConfig(
             experiment=experiment,
             profile_data=DataLoaderConfig(

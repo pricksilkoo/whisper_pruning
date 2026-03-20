@@ -1,6 +1,13 @@
 import torch
 
 class PruningTool():
+    """
+    这个类负责真正“把权重剪掉”。
+
+    注意这里的“剪掉”是指把某些位置的权重变成 0，
+    不是把模型结构真的删掉一部分层。
+    """
+
     def __init__(self):
         self.masks={}
         self.pruned_weights={}
@@ -11,6 +18,7 @@ class PruningTool():
         model.load_state_dict(backup_state_dict)
 
     def apply_to_model(self, model,log=True):
+        # 把已经计算好的 pruned_weights 写回模型。
         with torch.no_grad():
             for name, module in model.named_modules():
                 if name in self.pruned_weights:
@@ -65,6 +73,9 @@ class PruningTool():
 
             x_l2_norm = torch.sqrt(stats[name]["sq_sum"])
             wanda_metric = torch.abs(W) * x_l2_norm.unsqueeze(0)
+
+            # N:M 的意思是:
+            # 每连续 m 个元素里，只保留分数最高的 n 个。
             metric_blocks = wanda_metric.view(out_channels, in_channels // m, m)
             _, topk_indices = torch.topk(metric_blocks, k=n, dim=-1)
             mask_blocks = torch.zeros_like(metric_blocks, dtype=torch.bool)
@@ -91,6 +102,7 @@ class PruningTool():
         self.pruned_weights = {}
         
         for name, W in weights.items():
+            # 既支持统一稀疏度，也支持按层单独给稀疏度。
             if isinstance(sparsity, dict):
                 current_sparsity = sparsity.get(name, 0.0)
             else:
@@ -101,6 +113,9 @@ class PruningTool():
             wanda_metric = torch.abs(W) * x_l2_norm.unsqueeze(0)
             
             out_channels, in_channels = W.shape
+
+            # 这里的剪枝粒度是“按行”。
+            # 对每个输出通道，都会在输入维度上挑出 prune_num 个最不重要的位置置零。
             prune_num = min(in_channels, int(in_channels * current_sparsity))
             
             if prune_num <= 0:
@@ -110,6 +125,7 @@ class PruningTool():
                 
             _, bottomk_indices = torch.topk(wanda_metric, k=prune_num, dim=-1, largest=False)
             
+            # mask 里 True 表示保留，False 表示剪掉。
             mask = torch.ones_like(W, dtype=torch.bool)
             mask.scatter_(dim=-1, index=bottomk_indices, src=torch.zeros_like(bottomk_indices, dtype=torch.bool))
             

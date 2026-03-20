@@ -2,6 +2,10 @@
 
 这个仓库现在整理成了“统一配置 + 统一入口 + 薄脚本 wrapper”的结构，重点解决原来每个脚本都要单独改路径、dtype、batch size 和剪枝参数的问题。
 
+如果你现在对这套结构还不熟，建议先看这份阅读说明：
+
+- [`docs/beginner_guide.md`](/Users/hehaoran/Developer/whisper_pruning/docs/beginner_guide.md)
+
 ## 现在怎么用
 
 统一入口是 [`main.py`](/Users/hehaoran/Developer/whisper_pruning/main.py)。
@@ -59,6 +63,19 @@ python main.py sweep-owl --model whisper-large-v3-original --dataset en
 - [`whisper_pruning/pipelines.py`](/Users/hehaoran/Developer/whisper_pruning/whisper_pruning/pipelines.py)：封装评测、一次性剪枝、OWL sweep 等实验流程。
 - [`whisper_pruning/plotting.py`](/Users/hehaoran/Developer/whisper_pruning/whisper_pruning/plotting.py)：集中放可视化逻辑。
 - 顶层脚本如 [`evaluate_model.py`](/Users/hehaoran/Developer/whisper_pruning/evaluate_model.py) 和 [`one_time_pruning_evaluation.py`](/Users/hehaoran/Developer/whisper_pruning/one_time_pruning_evaluation.py) 现在只是预置参数的快捷入口。
+
+## 推荐阅读顺序
+
+如果你是为了“看懂项目”，建议按这个顺序读：
+
+1. [`main.py`](/Users/hehaoran/Developer/whisper_pruning/main.py)
+2. [`whisper_pruning/cli.py`](/Users/hehaoran/Developer/whisper_pruning/whisper_pruning/cli.py)
+3. [`whisper_pruning/config.py`](/Users/hehaoran/Developer/whisper_pruning/whisper_pruning/config.py)
+4. [`whisper_pruning/pipelines.py`](/Users/hehaoran/Developer/whisper_pruning/whisper_pruning/pipelines.py)
+5. [`utils/WandA_profiler.py`](/Users/hehaoran/Developer/whisper_pruning/utils/WandA_profiler.py)
+6. [`utils/scorer.py`](/Users/hehaoran/Developer/whisper_pruning/utils/scorer.py)
+7. [`utils/pruning_tools.py`](/Users/hehaoran/Developer/whisper_pruning/utils/pruning_tools.py)
+8. [`utils/evaluator.py`](/Users/hehaoran/Developer/whisper_pruning/utils/evaluator.py)
 
 ## 这次顺手修的点
 

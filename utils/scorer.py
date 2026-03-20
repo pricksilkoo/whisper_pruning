@@ -1,6 +1,16 @@
 import torch
 
 class Scorer:
+    """
+    这个类负责“给每一层打分”。
+
+    你可以把它理解成:
+    输入是 weights + activations_stats，
+    输出是:
+    - scores: 每层的原始分数
+    - retention_ratio: 每层最终保留率
+    """
+
     def __init__(self):
         self.scores={}
         self.retention_ratio={}
@@ -14,6 +24,12 @@ class Scorer:
         relative_difference=0.2,
         average_retention_ratio=0.6,
     ):
+        """
+        统一调度入口。
+
+        以前外面需要自己判断调用 owl / hhr1 / cv / mean，
+        现在统一写成 scorer.compute(method=...) 即可。
+        """
         method = method.lower()
         if method == "owl":
             return self.owl(
@@ -48,6 +64,12 @@ class Scorer:
         relative_difference=0.2,
         average_retention_ratio=0.6,
     ):
+        """
+        把原始 scores 映射成 retention_ratio。
+
+        average_retention_ratio 可以理解成“总体平均保留率想控制在多少”。
+        relative_difference 可以理解成“不同层之间允许拉开多大差距”。
+        """
         self.retention_ratio.clear()
         if not scores:
             return self.retention_ratio
@@ -64,11 +86,15 @@ class Scorer:
         score_max = max(score_values)
         score_min = min(score_values)
         if score_max == score_min:
+            # 所有层分数都一样时，说明无法区分层间重要性。
+            # 这时最稳妥的做法是所有层都给同样的保留率。
             self.retention_ratio = {
                 name: float(average_retention_ratio) for name in scores
             }
             return self.retention_ratio
 
+        # 这里是在算一个“基准保留率” base，
+        # 让最后所有层的平均保留率仍然接近 average_retention_ratio。
         weighted_delta_sum = sum(
             (scores[name] - score_min) * counts.get(name, 1) for name in scores
         )
@@ -78,6 +104,7 @@ class Scorer:
         ) / ((score_max - score_min) * total_count)
 
         for name, score in scores.items():
+            # 分数越高，保留率越高。
             ratio = base + relative_difference * (score - score_min) / (score_max - score_min)
             self.retention_ratio[name] = float(min(max(ratio, 0.0), 1.0))
 
@@ -98,6 +125,7 @@ class Scorer:
             k = torch.abs(weight) * x_l2
             k_biweight_mean=self._tukey_biweight_mean(k,c=0.01)
             s =  k / (k_biweight_mean + 1e-9)
+            # 大于阈值的比例越高，说明该层“重要权重”越多。
             mask=(s>=level).float()
             self.scores[name] = mask.mean().sqrt().item()
         return self.scores
@@ -144,6 +172,7 @@ class Scorer:
             k = torch.abs(weight) * x_l2
             k_mean=k.mean()
             k_std=k.std()
+            # CV = 标准差 / 均值，用来衡量这一层分布的离散程度。
             k_cv=k_std/k_mean
             self.scores[name] = k_cv.item()
         return self.scores, self.retention_ratio
@@ -168,6 +197,10 @@ class Scorer:
             k = torch.abs(weight) * x_l2
             k_mean=k.mean()
             s =  k / (k_mean + 1e-9)
+
+            # OWL 的核心直觉:
+            # 如果一层里“明显高于均值”的权重占比更高，
+            # 那这层更值得保留。
             mask=(s>=level).float()
             counts[name] = k.numel()
             self.scores[name] = mask.mean().item()
@@ -190,5 +223,6 @@ class Scorer:
         for name,weight in weights.items():
             x_l2=(activations_stats[name]["sq_sum"]/activations_stats[name]["count"]).sqrt()
             k = torch.abs(weight) * x_l2
+            # 最简单的 baseline: 直接拿 |W| * activation 的平均值当分数。
             self.scores[name]=k.mean().item()
         return self.scores,self.retention_ratio   
