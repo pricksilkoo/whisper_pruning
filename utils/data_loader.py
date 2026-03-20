@@ -75,6 +75,10 @@ def get_whisper_dataloader(
     shuffle=None,
     random_subset=False,
     seed=42,
+    num_workers=0,
+    pin_memory=None,
+    shard_id=None,
+    num_shards=None,
 ):
     """
     参数说明:
@@ -93,6 +97,10 @@ def get_whisper_dataloader(
         seed=seed,
     )
 
+    # 多卡评测时，让每个进程只处理自己负责的那一片数据。
+    if shard_id is not None and num_shards is not None:
+        dataset = dataset.shard(num_shards=num_shards, index=shard_id, contiguous=True)
+
     dataset = dataset.map(
         lambda x: prepare_dataset(x, processor),
         remove_columns=dataset.column_names,
@@ -108,6 +116,9 @@ def get_whisper_dataloader(
         batch_size=batch_size,
         collate_fn=collator,
         shuffle=(split == "train") if shuffle is None else shuffle,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available() if pin_memory is None else pin_memory,
+        persistent_workers=num_workers > 0,
     )
 
     return dataloader

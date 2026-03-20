@@ -84,7 +84,7 @@ class WAprofiler:
             self.hooks.append(module.register_forward_hook(self._get_hook(name)))
             
         self.model.eval()
-        with torch.no_grad():
+        with torch.inference_mode():
             for batch in tqdm(self.dataloader, desc="正在收集最新激活值"):
                 input_features = batch["input_features"].to(self.device,dtype=self.dtype)
                 labels = batch["labels"].to(self.device)

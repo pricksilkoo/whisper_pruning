@@ -4,6 +4,32 @@ from tqdm import tqdm
 import jiwer
 from whisper.normalizers import BasicTextNormalizer, EnglishTextNormalizer
 
+
+def get_text_normalizer(language):
+    if language and language.lower().startswith("en"):
+        return EnglishTextNormalizer()
+    return BasicTextNormalizer()
+
+
+def compute_metrics(references, predictions, normalizer):
+    clean_references = [normalizer(text) for text in references]
+    clean_predictions = [normalizer(text) for text in predictions]
+    cer = jiwer.cer(clean_references, clean_predictions)
+    wer = jiwer.wer(clean_references, clean_predictions)
+    return cer, wer, clean_references, clean_predictions
+
+
+def print_evaluation_summary(avg_loss, cer, wer, references, predictions, log=True):
+    if not predictions or not log:
+        return
+
+    print(f" 测评结果 | Loss: {avg_loss:.4f} | CER (字符错误率): {cer:.2%} | WER (词错误率): {wer:.2%}")
+    print("\n 【样例抽查】:")
+    for i in range(min(5, len(predictions))):
+        print(f"真实文本: {references[i]}")
+        print(f"模型预测: {predictions[i]}")
+        print("=" * 100)
+
 class Evaluator:
     """
     这个类负责最终评测模型。
@@ -20,18 +46,12 @@ class Evaluator:
         self.processor = processor
         self.dataloader = dataloader
         self.device = device
-        self.normalizer = normalizer or self._build_normalizer(language)
+        self.normalizer = normalizer or get_text_normalizer(language)
         self.task=task
         self.language=language
         self.dtype=dtype or next(model.parameters()).dtype
 
-    def _build_normalizer(self, language):
-        # 英文用更强的英文标准化器，其他语言先用基础版。
-        if language and language.lower().startswith("en"):
-            return EnglishTextNormalizer()
-        return BasicTextNormalizer()
-
-    def evaluate(self, log = True):
+    def evaluate(self, log = True, return_details=False):
         """
         运行完整的推理评估，计算 Loss (交叉熵)，计算 CER (字符错误率)， WER (词错误率)。
         """
@@ -41,7 +61,7 @@ class Evaluator:
         references = []
         total_loss = 0.0
 
-        with torch.no_grad():
+        with torch.inference_mode():
             for batch in tqdm(self.dataloader, desc="正在进行语音转录推理"):
                 input_features = batch["input_features"].to(self.device, dtype=self.dtype)
                 labels = batch["labels"].to(self.device)
@@ -77,21 +97,26 @@ class Evaluator:
                 real_texts = self.processor.batch_decode(labels_for_decode, skip_special_tokens=True)
                 references.extend(real_texts)
 
-        # 先做文本标准化，再计算误差率。
-        clean_references = [self.normalizer(text) for text in references]
-        clean_predictions = [self.normalizer(text) for text in predictions]
-        # 计算cer，wer，avgloss
-        cer = jiwer.cer(clean_references, clean_predictions)
-        wer = jiwer.wer(clean_references, clean_predictions)
+        cer, wer, clean_references, clean_predictions = compute_metrics(
+            references=references,
+            predictions=predictions,
+            normalizer=self.normalizer,
+        )
         avg_loss = total_loss / len(self.dataloader)
-        
-        #打印日志
-        if predictions and log:
-            print(f" 测评结果 | Loss: {avg_loss:.4f} | CER (字符错误率): {cer:.2%} | WER (词错误率): {wer:.2%}")
-            print("\n 【样例抽查】:")
-            for i in range(min(5, len(predictions))):
-                print(f"真实文本: {references[i]}")
-                print(f"模型预测: {predictions[i]}")
-                print("="*100)
-        
+
+        print_evaluation_summary(avg_loss, cer, wer, references, predictions, log=log)
+
+        if return_details:
+            return {
+                "cer": cer,
+                "wer": wer,
+                "avg_loss": avg_loss,
+                "total_loss": total_loss,
+                "num_batches": len(self.dataloader),
+                "references": references,
+                "predictions": predictions,
+                "clean_references": clean_references,
+                "clean_predictions": clean_predictions,
+            }
+
         return cer, wer, avg_loss

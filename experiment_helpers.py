@@ -26,6 +26,21 @@ DTYPE_MAP = {
 }
 
 
+def configure_torch_runtime():
+    """
+    为推理场景打开一些相对稳妥的加速开关。
+    """
+    if torch.cuda.is_available():
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True
+
+    try:
+        torch.set_float32_matmul_precision("high")
+    except Exception:
+        pass
+
+
 def get_torch_dtype(dtype_name="float16"):
     """把字符串 dtype 转成 PyTorch 能识别的 dtype。"""
     if isinstance(dtype_name, torch.dtype):
@@ -102,6 +117,10 @@ def load_data(
     shuffle=None,
     random_subset=False,
     seed=42,
+    num_workers=0,
+    pin_memory=None,
+    shard_id=None,
+    num_shards=None,
 ):
     """
     加载一个 Whisper dataloader。
@@ -123,4 +142,8 @@ def load_data(
         shuffle=shuffle,
         random_subset=random_subset,
         seed=seed,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        shard_id=shard_id,
+        num_shards=num_shards,
     )
