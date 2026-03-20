@@ -5,6 +5,84 @@ class Scorer:
         self.scores={}
         self.retention_ratio={}
 
+    def compute(
+        self,
+        method,
+        weights,
+        activations_stats,
+        level=7,
+        relative_difference=0.2,
+        average_retention_ratio=0.6,
+    ):
+        method = method.lower()
+        if method == "owl":
+            return self.owl(
+                weights=weights,
+                activations_stats=activations_stats,
+                level=level,
+                relative_difference=relative_difference,
+                average_retention_ratio=average_retention_ratio,
+            )
+        if method == "hhr1":
+            scores = self.hhr1(weights, activations_stats, level=level)
+        elif method == "cv":
+            scores, _ = self.cv(weights, activations_stats)
+        elif method == "mean":
+            scores, _ = self.mean(weights, activations_stats)
+        else:
+            raise ValueError(f"不支持的打分方法: {method}")
+
+        counts = {name: weight.numel() for name, weight in weights.items()}
+        retention_ratio = self.scores_to_retention_ratios(
+            scores=scores,
+            counts=counts,
+            relative_difference=relative_difference,
+            average_retention_ratio=average_retention_ratio,
+        )
+        return scores, retention_ratio
+
+    def scores_to_retention_ratios(
+        self,
+        scores,
+        counts,
+        relative_difference=0.2,
+        average_retention_ratio=0.6,
+    ):
+        self.retention_ratio.clear()
+        if not scores:
+            return self.retention_ratio
+
+        if not (
+            0 <= relative_difference <= 1
+            and 0 <= average_retention_ratio <= 1
+            and 0 <= average_retention_ratio - relative_difference
+            and average_retention_ratio + relative_difference <= 1
+        ):
+            raise ValueError("rd 或 avg 值不在规定范围内")
+
+        score_values = list(scores.values())
+        score_max = max(score_values)
+        score_min = min(score_values)
+        if score_max == score_min:
+            self.retention_ratio = {
+                name: float(average_retention_ratio) for name in scores
+            }
+            return self.retention_ratio
+
+        weighted_delta_sum = sum(
+            (scores[name] - score_min) * counts.get(name, 1) for name in scores
+        )
+        total_count = sum(counts.get(name, 1) for name in scores)
+        base = average_retention_ratio - (
+            relative_difference * weighted_delta_sum
+        ) / ((score_max - score_min) * total_count)
+
+        for name, score in scores.items():
+            ratio = base + relative_difference * (score - score_min) / (score_max - score_min)
+            self.retention_ratio[name] = float(min(max(ratio, 0.0), 1.0))
+
+        return self.retention_ratio
+
     def hhr1(self,weights,activations_stats,level=0.1):
         """
             基于wanda的层级打分方法
@@ -83,9 +161,7 @@ class Scorer:
                 and average_retention_ratio+relative_difference <=1):
             raise ValueError(f"level或rd或avg值不在规定范围内")
         
-        count={}
-        scoremax=0
-        scoremin=0
+        counts = {}
         for name,weight in weights.items():
             #计算owl的分数
             x_l2=(activations_stats[name]["sq_sum"]/activations_stats[name]["count"]).sqrt()
@@ -93,21 +169,16 @@ class Scorer:
             k_mean=k.mean()
             s =  k / (k_mean + 1e-9)
             mask=(s>=level).float()
-            count[name] = k.numel()
-            score=mask.mean().item()
-            if (score>scoremax):
-                scoremax=score
-            if (score<scoremin):
-                scoremin=score
-            self.scores[name] = score
-        #计算保留率
-        result = {k: (self.scores[k]-scoremin) * count[k] for k in count}
-        base=average_retention_ratio-((relative_difference*sum(result.values()))/((scoremax-scoremin)*sum(count.values())))
+            counts[name] = k.numel()
+            self.scores[name] = mask.mean().item()
 
-        for name,score in self.scores.items():
-            self.retention_ratio[name]=base+relative_difference*(score-scoremin)/(scoremax-scoremin)
+        self.retention_ratio = self.scores_to_retention_ratios(
+            scores=self.scores,
+            counts=counts,
+            relative_difference=relative_difference,
+            average_retention_ratio=average_retention_ratio,
+        )
 
-        
         return self.scores,self.retention_ratio    
 
     def mean(self,weights,activations_stats):

@@ -2,7 +2,6 @@ import torch
 from dataclasses import dataclass
 from typing import Any, Dict, List, Union
 from datasets import load_from_disk
-from transformers import WhisperProcessor
 
 #处理原始数据
 def prepare_dataset(batch,processor):
@@ -49,7 +48,14 @@ class DataCollatorSpeechSeq2SeqWithPadding:
         return batch
 
 #数据加载器，对外api
-def get_whisper_dataloader(data_path, processor, split="train", batch_size=4, num_samples=None):
+def get_whisper_dataloader(
+    data_path,
+    processor,
+    split="train",
+    batch_size=4,
+    num_samples=None,
+    shuffle=None,
+):
     """
     参数说明:
     - data_path: 本地数据的路径
@@ -58,7 +64,8 @@ def get_whisper_dataloader(data_path, processor, split="train", batch_size=4, nu
     - batch_size: 一次送进去几句话
     - num_samples: 截取数量(None为全部)
     """
-    dataset = load_from_disk(data_path)[split]
+    dataset_dict = load_from_disk(data_path)
+    dataset = dataset_dict[split]
 
     if num_samples is not None:
         dataset = dataset.select(range(min(num_samples, len(dataset))))
@@ -77,7 +84,7 @@ def get_whisper_dataloader(data_path, processor, split="train", batch_size=4, nu
         dataset,
         batch_size=batch_size,
         collate_fn=collator,
-        shuffle=(split == "train")
+        shuffle=(split == "train") if shuffle is None else shuffle,
     )
 
     return dataloader

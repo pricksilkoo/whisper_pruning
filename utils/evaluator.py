@@ -2,20 +2,25 @@
 import torch
 from tqdm import tqdm
 import jiwer
-import whisper.normalizers as Normalizers
+from whisper.normalizers import BasicTextNormalizer, EnglishTextNormalizer
 
 class Evaluator:
     def __init__(self, model, processor, dataloader, device, 
-                 language='en', task="transcribe", dtype=torch.float32,
-                 normalizer=Normalizers.EnglishTextNormalizer()):
+                 language='en', task="transcribe", dtype=None,
+                 normalizer=None):
         self.model = model
         self.processor = processor
         self.dataloader = dataloader
         self.device = device
-        self.normalizer = normalizer
+        self.normalizer = normalizer or self._build_normalizer(language)
         self.task=task
         self.language=language
-        self.dtype=dtype
+        self.dtype=dtype or next(model.parameters()).dtype
+
+    def _build_normalizer(self, language):
+        if language and language.lower().startswith("en"):
+            return EnglishTextNormalizer()
+        return BasicTextNormalizer()
 
     def evaluate(self, log = True):
         """
@@ -43,7 +48,7 @@ class Evaluator:
                 #自回归推理
                 generated_ids = self.model.generate(
                     input_features=input_features,
-                    encoder_outputs=(encoder_outputs,), 
+                    encoder_outputs=(encoder_outputs,),
                     attention_mask=attention_mask,
                     language=self.language,     
                     task=self.task,             
@@ -64,10 +69,10 @@ class Evaluator:
         avg_loss = total_loss / len(self.dataloader)
         
         #打印日志
-        if (len(predictions) and log) > 0:
+        if predictions and log:
             print(f" 测评结果 | Loss: {avg_loss:.4f} | CER (字符错误率): {cer:.2%} | WER (词错误率): {wer:.2%}")
             print("\n 【样例抽查】:")
-            for i in range(5):
+            for i in range(min(5, len(predictions))):
                 print(f"真实文本: {references[i]}")
                 print(f"模型预测: {predictions[i]}")
                 print("="*100)

@@ -95,12 +95,13 @@ class PruningTool():
                 current_sparsity = sparsity.get(name, 0.0)
             else:
                 current_sparsity = float(sparsity)
+            current_sparsity = min(max(current_sparsity, 0.0), 1.0)
                 
             x_l2_norm = torch.sqrt(stats[name]["sq_sum"])
             wanda_metric = torch.abs(W) * x_l2_norm.unsqueeze(0)
             
             out_channels, in_channels = W.shape
-            prune_num = int(in_channels * current_sparsity)
+            prune_num = min(in_channels, int(in_channels * current_sparsity))
             
             if prune_num <= 0:
                 self.pruned_weights[name] = W.clone()
