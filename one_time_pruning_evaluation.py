@@ -36,7 +36,8 @@ GPU_IDS = [0, 1, 2, 3]
 USE_MULTI_GPU_EVAL = True
 TEXT_FIELD = "raw_transcription"  # 如果你的数据里有更规范的 transcription，可改成 "transcription"
 EVAL_NUM_BEAMS = 5
-EVAL_GENERATION_BATCH_SIZE = 8  # beam search 显存更重，生成阶段单独切小 batch
+EVAL_GENERATION_BATCH_SIZE = 1  # beam search 显存更重，生成阶段单独切小 batch
+EVAL_COMPUTE_LOSS = False  # 先稳住 WER/CER；如需 loss 再打开
 
 # 用来收集激活值的小样本数据
 PROFILE_SPLIT = "train"
@@ -127,6 +128,7 @@ def evaluate_current_model(model, processor, device, torch_dtype):
             "num_beams": EVAL_NUM_BEAMS,
             "generation_batch_size": EVAL_GENERATION_BATCH_SIZE,
         },
+        compute_loss=EVAL_COMPUTE_LOSS,
     )
     return evaluator.evaluate()
 
@@ -171,6 +173,7 @@ def _evaluate_checkpoint_worker(worker_rank, gpu_id, checkpoint_path, result_dir
             "num_beams": EVAL_NUM_BEAMS,
             "generation_batch_size": EVAL_GENERATION_BATCH_SIZE,
         },
+        compute_loss=EVAL_COMPUTE_LOSS,
     )
     result = evaluator.evaluate(log=False, return_details=True)
     torch.save(result, os.path.join(result_dir, f"worker_{worker_rank}.pt"))

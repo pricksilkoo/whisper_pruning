@@ -21,7 +21,7 @@ from utils.evaluator import Evaluator, compute_metrics, get_text_normalizer, pri
 # ============================================================
 MODEL_NAME = "whisper-large-v3-original"
 DATASET_NAME = "en"
-DTYPE = "float32"  # 对齐 baseline 时更稳；确认后可改回 float16 提速
+DTYPE = "float16"  # baseline 先优先跑通；如果你只评少量样本，再尝试 float32
 DEVICE = None
 
 MODEL_ROOT = "./models"
@@ -30,12 +30,13 @@ GPU_IDS = [0, 1, 2, 3]
 USE_MULTI_GPU_EVAL = True
 
 SPLIT = "test"
-BATCH_SIZE = 64
+BATCH_SIZE = 16
 NUM_SAMPLES = None
 NUM_WORKERS = 4
 TEXT_FIELD = "raw_transcription"  # 如果你的数据里有更规范的 transcription，可改成 "transcription"
 NUM_BEAMS = 5
-GENERATION_BATCH_SIZE = 8  # generate 比 forward 更吃显存，beam search 时建议设小一点
+GENERATION_BATCH_SIZE = 1  # beam search 显存很重，large-v3 建议先从 1 开始
+COMPUTE_LOSS = False  # 先把 WER/CER 跑通；要算 loss 再改成 True
 # ============================================================
 
 
@@ -71,6 +72,7 @@ def evaluate_single_gpu():
             "num_beams": NUM_BEAMS,
             "generation_batch_size": GENERATION_BATCH_SIZE,
         },
+        compute_loss=COMPUTE_LOSS,
     )
     return evaluator.evaluate()
 
@@ -112,6 +114,7 @@ def _evaluate_worker(worker_rank, gpu_id, result_dir, num_shards):
             "num_beams": NUM_BEAMS,
             "generation_batch_size": GENERATION_BATCH_SIZE,
         },
+        compute_loss=COMPUTE_LOSS,
     )
     result = evaluator.evaluate(log=False, return_details=True)
     torch.save(result, os.path.join(result_dir, f"worker_{worker_rank}.pt"))

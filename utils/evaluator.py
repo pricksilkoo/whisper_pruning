@@ -23,7 +23,8 @@ def print_evaluation_summary(avg_loss, cer, wer, references, predictions, log=Tr
     if not predictions or not log:
         return
 
-    print(f" 测评结果 | Loss: {avg_loss:.4f} | CER (字符错误率): {cer:.2%} | WER (词错误率): {wer:.2%}")
+    loss_text = f"{avg_loss:.4f}" if avg_loss == avg_loss else "N/A"
+    print(f" 测评结果 | Loss: {loss_text} | CER (字符错误率): {cer:.2%} | WER (词错误率): {wer:.2%}")
     print("\n 【样例抽查】:")
     for i in range(min(5, len(predictions))):
         print(f"真实文本: {references[i]}")
@@ -41,7 +42,7 @@ class Evaluator:
 
     def __init__(self, model, processor, dataloader, device, 
                  language='en', task="transcribe", dtype=None,
-                 normalizer=None, generation_kwargs=None):
+                 normalizer=None, generation_kwargs=None, compute_loss=True):
         self.model = model
         self.processor = processor
         self.dataloader = dataloader
@@ -53,6 +54,7 @@ class Evaluator:
         generation_kwargs = dict(generation_kwargs or {})
         self.generation_batch_size = generation_kwargs.pop("generation_batch_size", None)
         self.generation_kwargs = generation_kwargs
+        self.compute_loss = compute_loss
 
     def _generate_in_chunks(self, input_features, attention_mask):
         """
@@ -84,6 +86,8 @@ class Evaluator:
             del generated_ids, chunk_input_features
             if chunk_attention_mask is not None:
                 del chunk_attention_mask
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         return predictions
 
@@ -105,14 +109,17 @@ class Evaluator:
                 if attention_mask is not None:
                     attention_mask = attention_mask.to(self.device)
 
-                # 前向时把 attention_mask 也传进去，避免 padding 对结果造成额外污染。
-                outputs = self.model(
-                    input_features=input_features,
-                    labels=labels,
-                    attention_mask=attention_mask,
-                )
-                loss = outputs.loss
-                total_loss += loss.item()
+                if self.compute_loss:
+                    # 前向时把 attention_mask 也传进去，避免 padding 对结果造成额外污染。
+                    outputs = self.model(
+                        input_features=input_features,
+                        labels=labels,
+                        attention_mask=attention_mask,
+                    )
+                    total_loss += outputs.loss.item()
+                    del outputs
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
 
                 # 这里不再复用 forward 拿到的 encoder_outputs，
                 # 直接让 generate 自己重新走一遍编码，优先保证评测正确。
@@ -138,7 +145,7 @@ class Evaluator:
             predictions=predictions,
             normalizer=self.normalizer,
         )
-        avg_loss = total_loss / len(self.dataloader)
+        avg_loss = total_loss / len(self.dataloader) if self.compute_loss else float("nan")
 
         print_evaluation_summary(avg_loss, cer, wer, references, predictions, log=log)
 
