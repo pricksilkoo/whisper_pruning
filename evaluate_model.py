@@ -35,6 +35,7 @@ NUM_SAMPLES = None
 NUM_WORKERS = 4
 TEXT_FIELD = "raw_transcription"  # 如果你的数据里有更规范的 transcription，可改成 "transcription"
 NUM_BEAMS = 5
+GENERATION_BATCH_SIZE = 8  # generate 比 forward 更吃显存，beam search 时建议设小一点
 # ============================================================
 
 
@@ -66,7 +67,10 @@ def evaluate_single_gpu():
         language=DATASET_NAME,
         task="transcribe",
         dtype=torch_dtype,
-        generation_kwargs={"num_beams": NUM_BEAMS},
+        generation_kwargs={
+            "num_beams": NUM_BEAMS,
+            "generation_batch_size": GENERATION_BATCH_SIZE,
+        },
     )
     return evaluator.evaluate()
 
@@ -104,7 +108,10 @@ def _evaluate_worker(worker_rank, gpu_id, result_dir, num_shards):
         language=DATASET_NAME,
         task="transcribe",
         dtype=torch_dtype,
-        generation_kwargs={"num_beams": NUM_BEAMS},
+        generation_kwargs={
+            "num_beams": NUM_BEAMS,
+            "generation_batch_size": GENERATION_BATCH_SIZE,
+        },
     )
     result = evaluator.evaluate(log=False, return_details=True)
     torch.save(result, os.path.join(result_dir, f"worker_{worker_rank}.pt"))

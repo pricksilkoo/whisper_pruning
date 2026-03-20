@@ -50,7 +50,42 @@ class Evaluator:
         self.task=task
         self.language=language
         self.dtype=dtype or next(model.parameters()).dtype
-        self.generation_kwargs = generation_kwargs or {}
+        generation_kwargs = dict(generation_kwargs or {})
+        self.generation_batch_size = generation_kwargs.pop("generation_batch_size", None)
+        self.generation_kwargs = generation_kwargs
+
+    def _generate_in_chunks(self, input_features, attention_mask):
+        """
+        generate 比普通 forward 更吃显存，尤其是 beam search。
+        所以这里支持把一个大 batch 拆成多个小块，逐块解码。
+        """
+        batch_size = input_features.shape[0]
+        chunk_size = self.generation_batch_size or batch_size
+        chunk_size = max(1, min(chunk_size, batch_size))
+
+        predictions = []
+        for start in range(0, batch_size, chunk_size):
+            end = min(start + chunk_size, batch_size)
+            chunk_input_features = input_features[start:end]
+            chunk_attention_mask = None if attention_mask is None else attention_mask[start:end]
+
+            generate_kwargs = {
+                "input_features": chunk_input_features,
+                "attention_mask": chunk_attention_mask,
+                "language": self.language,
+                "task": self.task,
+            }
+            generate_kwargs.update(self.generation_kwargs)
+
+            generated_ids = self.model.generate(**generate_kwargs)
+            chunk_predictions = self.processor.batch_decode(generated_ids, skip_special_tokens=True)
+            predictions.extend(chunk_predictions)
+
+            del generated_ids, chunk_input_features
+            if chunk_attention_mask is not None:
+                del chunk_attention_mask
+
+        return predictions
 
     def evaluate(self, log = True, return_details=False):
         """
@@ -81,18 +116,10 @@ class Evaluator:
 
                 # 这里不再复用 forward 拿到的 encoder_outputs，
                 # 直接让 generate 自己重新走一遍编码，优先保证评测正确。
-                generate_kwargs = {
-                    "input_features": input_features,
-                    "attention_mask": attention_mask,
-                    "language": self.language,
-                    "task": self.task,
-                }
-                generate_kwargs.update(self.generation_kwargs)
-
-                generated_ids = self.model.generate(
-                    **generate_kwargs,
+                transcriptions = self._generate_in_chunks(
+                    input_features=input_features,
+                    attention_mask=attention_mask,
                 )
-                transcriptions = self.processor.batch_decode(generated_ids, skip_special_tokens=True)
                 predictions.extend(transcriptions)
 
                 # 评测时优先使用数据集原始参考文本，
