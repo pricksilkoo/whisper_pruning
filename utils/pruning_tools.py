@@ -12,11 +12,6 @@ class PruningTool():
         self.masks={}
         self.pruned_weights={}
 
-    def restore_model_weights(self, model, backup_state_dict):
-        #original_weights_backup = {k: v.clone() for k, v in model.state_dict().items()}用于获取原始权重
-        #传入原始权重！！！
-        model.load_state_dict(backup_state_dict)
-
     def apply_to_model(self, model,log=True):
         # 把已经计算好的 pruned_weights 写回模型。
         with torch.no_grad():
@@ -46,48 +41,11 @@ class PruningTool():
             print(f" 局部指标 -> 线性层内部稀疏度: {linear_sparsity:.2%}")
             print(f" 核心指标 -> 整网全局真稀疏度: {global_sparsity:.2%}")
             print("="*40 + "\n")
-
-
-    def wanda_nm_pruning(self, weights, stats, n=2, m=4):
-        """
-        Wanda 半结构化 (N:M) 剪枝核心逻辑
-        参数:
-            weights (dict): WAprofiler 收集到的各层权重字典 {layer_name: tensor}
-            stats (dict): WAprofiler 收集到的激活值统计字典 {layer_name: {'sq_sum': tensor, ...}}
-            n (int): 每 M 个元素中保留 N 个非零值
-            m (int): 分块的大小 (通常是 4 或 8)  
-        返回:
-            self.pruned_weights (dict): 剪枝后(含大量0)的权重字典
-            self.masks (dict): 对应的 0/1 掩码矩阵，方便后续接入 PyTorch 官方 API
-        """
-        self.masks={}
-        self.pruned_weights={}
-        
-        for name, W in weights.items():
-            out_channels, in_channels = W.shape
-  
-            if in_channels % m != 0:
-                print(f"⚠️ 警告: {name} 的输入维度 {in_channels} 无法被 {m} 整除，跳过该层！")
-                self.pruned_weights[name] = W.clone()
-                continue
-
-            x_l2_norm = torch.sqrt(stats[name]["sq_sum"])
-            wanda_metric = torch.abs(W) * x_l2_norm.unsqueeze(0)
-
-            # N:M 的意思是:
-            # 每连续 m 个元素里，只保留分数最高的 n 个。
-            metric_blocks = wanda_metric.view(out_channels, in_channels // m, m)
-            _, topk_indices = torch.topk(metric_blocks, k=n, dim=-1)
-            mask_blocks = torch.zeros_like(metric_blocks, dtype=torch.bool)
-            mask_blocks.scatter_(dim=-1, index=topk_indices, src=torch.ones_like(topk_indices, dtype=torch.bool))
-            mask = mask_blocks.view(out_channels, in_channels)
-            self.pruned_weights[name] = W * mask
-            self.masks[name] = mask
-        return self.pruned_weights, self.masks
     
     def wanda_unstructured_pruning(self, weights, stats, sparsity=0.5):
         """
-        Wanda 常规非结构化剪枝核心逻辑 (支持均匀与非均匀剪枝)
+        Wanda 非结构化剪枝核心逻辑。
+
         参数:
             weights (dict): WAprofiler 收集到的各层权重字典 {layer_name: tensor}
             stats (dict): WAprofiler 收集到的激活值统计字典 {layer_name: {'sq_sum': tensor, ...}}
@@ -102,7 +60,6 @@ class PruningTool():
         self.pruned_weights = {}
         
         for name, W in weights.items():
-            # 既支持统一稀疏度，也支持按层单独给稀疏度。
             if isinstance(sparsity, dict):
                 current_sparsity = sparsity.get(name, 0.0)
             else:

@@ -130,8 +130,10 @@ SAVE_DIR = f"./outputs/visualize_scores/{MODEL_NAME}"
 SPLIT = "test"
 BATCH_SIZE = 4
 NUM_SAMPLES = 8
+RANDOM_SUBSET = False
+SAMPLE_SEED = 42
 
-SCORE_METHOD = "owl"  # owl / hhr1 / cv / mean
+SCORE_METHOD = "owl"  # owl / cv
 LEVEL = 7
 RELATIVE_DIFFERENCE = 0.0
 AVERAGE_RETENTION_RATIO = 0.4
@@ -156,6 +158,8 @@ def main():
         num_samples=NUM_SAMPLES,
         data_root=DATA_ROOT,
         shuffle=False,
+        random_subset=RANDOM_SUBSET,
+        seed=SAMPLE_SEED,
     )
 
     profiler = WAprofiler(model, dataloader, device=device, dtype=torch_dtype)

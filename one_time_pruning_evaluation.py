@@ -1,7 +1,7 @@
 """
 这个文件对应你的核心实验：
 1. 收集激活统计
-2. 计算每层保留率
+2. 计算剪枝稀疏度
 3. 执行一次性剪枝
 4. 评测剪枝后的模型
 
@@ -30,25 +30,55 @@ DATA_ROOT = "./data/fleurs_full"
 # 用来收集激活值的小样本数据
 PROFILE_SPLIT = "train"
 PROFILE_BATCH_SIZE = 32
-PROFILE_NUM_SAMPLES = 64
+PROFILE_NUM_SAMPLES = 256
+PROFILE_RANDOM_SUBSET = True
+PROFILE_SAMPLE_SEED = 42
 
 # 用来最终评测的数据
 EVAL_SPLIT = "test"
 EVAL_BATCH_SIZE = 16
 EVAL_NUM_SAMPLES = 512
 
-# 打分参数
-SCORE_METHOD = "owl"
+# 剪枝模式
+# - "uniform": 真正的统一剪枝，所有层都用同一个 sparsity
+# - "layerwise": 先打分，再给不同层分配不同 sparsity
+SPARSITY_MODE = "uniform"  # uniform / layerwise
+UNIFORM_SPARSITY = 0.6
+
+# 只有在 SPARSITY_MODE="layerwise" 时，这组参数才会生效
+SCORE_METHOD = "owl"  # owl / cv
 LEVEL = 7
 RELATIVE_DIFFERENCE = 0
 AVERAGE_RETENTION_RATIO = 0.4
 
-# 剪枝参数
-PRUNING_METHOD = "wanda_unstructured"  # 可选: wanda_unstructured / wanda_nm
-UNIFORM_SPARSITY = None
-N = 2
-M = 4
 # ============================================================
+
+
+def build_sparsity(weights, stats):
+    """
+    根据配置决定这次到底是:
+    - 真 uniform 剪枝
+    - 还是 layerwise 剪枝
+    """
+    if SPARSITY_MODE == "uniform":
+        print(f"✂️ 使用 uniform Wanda，统一稀疏度 = {UNIFORM_SPARSITY:.2%}")
+        return UNIFORM_SPARSITY
+
+    if SPARSITY_MODE == "layerwise":
+        scorer = Scorer()
+        scores, retention_ratio = scorer.compute(
+            method=SCORE_METHOD,
+            weights=weights,
+            activations_stats=stats,
+            level=LEVEL,
+            relative_difference=RELATIVE_DIFFERENCE,
+            average_retention_ratio=AVERAGE_RETENTION_RATIO,
+        )
+        sparsity = {name: 1.0 - ratio for name, ratio in retention_ratio.items()}
+        print(f"💻 {SCORE_METHOD} 打分完成，共得到 {len(scores)} 层分数")
+        return sparsity
+
+    raise ValueError(f"不支持的 SPARSITY_MODE: {SPARSITY_MODE}")
 
 
 def main():
@@ -68,41 +98,19 @@ def main():
         num_samples=PROFILE_NUM_SAMPLES,
         data_root=DATA_ROOT,
         shuffle=True,
+        random_subset=PROFILE_RANDOM_SUBSET,
+        seed=PROFILE_SAMPLE_SEED,
     )
 
     profiler = WAprofiler(model, profile_loader, device=device, dtype=torch_dtype)
     weights, stats = profiler.getWA()
 
-    # 第二步：根据分数算法计算每层保留率
-    scorer = Scorer()
-    scores, retention_ratio = scorer.compute(
-        method=SCORE_METHOD,
-        weights=weights,
-        activations_stats=stats,
-        level=LEVEL,
-        relative_difference=RELATIVE_DIFFERENCE,
-        average_retention_ratio=AVERAGE_RETENTION_RATIO,
-    )
-
-    # 如果打分方法没有返回 retention_ratio，就退回统一稀疏度模式
-    if retention_ratio:
-        sparsity = {name: 1.0 - ratio for name, ratio in retention_ratio.items()}
-    elif UNIFORM_SPARSITY is not None:
-        sparsity = UNIFORM_SPARSITY
-    else:
-        raise ValueError("当前配置没有得到 retention_ratio，也没有设置 UNIFORM_SPARSITY。")
-
-    print(f"💻 打分完成，共得到 {len(scores)} 层分数")
+    # 第二步：生成这次要用的 sparsity
+    sparsity = build_sparsity(weights, stats)
 
     # 第三步：执行剪枝
     pruner = PruningTool()
-    if PRUNING_METHOD == "wanda_unstructured":
-        pruner.wanda_unstructured_pruning(weights, stats, sparsity=sparsity)
-    elif PRUNING_METHOD == "wanda_nm":
-        pruner.wanda_nm_pruning(weights, stats, n=N, m=M)
-    else:
-        raise ValueError(f"不支持的剪枝方法: {PRUNING_METHOD}")
-
+    pruner.wanda_unstructured_pruning(weights, stats, sparsity=sparsity)
     pruner.apply_to_model(model)
 
     # 第四步：评测剪枝后的模型

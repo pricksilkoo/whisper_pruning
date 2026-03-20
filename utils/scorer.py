@@ -27,7 +27,10 @@ class Scorer:
         """
         统一调度入口。
 
-        以前外面需要自己判断调用 owl / hhr1 / cv / mean，
+        现在只保留两种打分方法：
+        - owl
+        - cv
+
         现在统一写成 scorer.compute(method=...) 即可。
         """
         method = method.lower()
@@ -39,12 +42,8 @@ class Scorer:
                 relative_difference=relative_difference,
                 average_retention_ratio=average_retention_ratio,
             )
-        if method == "hhr1":
-            scores = self.hhr1(weights, activations_stats, level=level)
-        elif method == "cv":
+        if method == "cv":
             scores, _ = self.cv(weights, activations_stats)
-        elif method == "mean":
-            scores, _ = self.mean(weights, activations_stats)
         else:
             raise ValueError(f"不支持的打分方法: {method}")
 
@@ -110,57 +109,6 @@ class Scorer:
 
         return self.retention_ratio
 
-    def hhr1(self,weights,activations_stats,level=0.1):
-        """
-            基于wanda的层级打分方法
-            level表示在该层的相对重要性基线,即重要程度小于level的权重越多分数越低
-            其中level范围(0,1)
-        """
-        self.scores.clear()
-        if not (0 <= level <= 1):
-            raise ValueError(f"level值不在规定范围内")
-        
-        for name,weight in weights.items():
-            x_l2=activations_stats[name]["sq_sum"].sqrt()
-            k = torch.abs(weight) * x_l2
-            k_biweight_mean=self._tukey_biweight_mean(k,c=0.01)
-            s =  k / (k_biweight_mean + 1e-9)
-            # 大于阈值的比例越高，说明该层“重要权重”越多。
-            mask=(s>=level).float()
-            self.scores[name] = mask.mean().sqrt().item()
-        return self.scores
-    
-
-    def _tukey_biweight_mean(self, x, c=4.685):
-        """
-        使用 Tukey Biweight 算法计算鲁棒均值
-        x: 输入的 Tensor (例如你代码中的 k)
-        c: 阈值常数，c越大越包容，c越小越严格
-        """
-        if x.numel() == 0:
-            return torch.tensor(0.0)
-        
-        x_flat = x.view(-1)
-        median = x_flat.median()
-        # MAD = median(|x_i - median|)
-        abs_deviation = torch.abs(x_flat - median)
-        mad = abs_deviation.median()
-        s = mad * 1.4826 + 1e-6
-        
-        u = abs_deviation / (c * s)
-        
-        # Tukey 权重
-        # 当 |u| <= 1 时，权重为 (1 - u^2)^2；否则为 0
-        weights = torch.where(
-            u <= 1, 
-            (1 - u**2)**2, 
-            torch.zeros_like(u)
-        )
-        
-        biweight_mean = torch.sum(weights * x_flat) / (torch.sum(weights) + 1e-10)
-        
-        return biweight_mean
-
     def cv(self,weights,activations_stats):
         """
             基于wanda计算变异系数(Coefficient of Variation)的打分方法
@@ -173,7 +121,7 @@ class Scorer:
             k_mean=k.mean()
             k_std=k.std()
             # CV = 标准差 / 均值，用来衡量这一层分布的离散程度。
-            k_cv=k_std/k_mean
+            k_cv=k_std/(k_mean + 1e-9)
             self.scores[name] = k_cv.item()
         return self.scores, self.retention_ratio
     
@@ -213,16 +161,3 @@ class Scorer:
         )
 
         return self.scores,self.retention_ratio    
-
-    def mean(self,weights,activations_stats):
-        """
-            基于wanda计算平均值的打分方法
-        """
-        self.scores.clear()
-        self.retention_ratio.clear()
-        for name,weight in weights.items():
-            x_l2=(activations_stats[name]["sq_sum"]/activations_stats[name]["count"]).sqrt()
-            k = torch.abs(weight) * x_l2
-            # 最简单的 baseline: 直接拿 |W| * activation 的平均值当分数。
-            self.scores[name]=k.mean().item()
-        return self.scores,self.retention_ratio   

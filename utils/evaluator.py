@@ -48,16 +48,20 @@ class Evaluator:
                 attention_mask = batch.get("attention_mask")
                 if attention_mask is not None:
                     attention_mask = attention_mask.to(self.device)
-                #向前传播
-                outputs = self.model(input_features=input_features, labels=labels)
+
+                # 前向时把 attention_mask 也传进去，避免 padding 对结果造成额外污染。
+                outputs = self.model(
+                    input_features=input_features,
+                    labels=labels,
+                    attention_mask=attention_mask,
+                )
                 loss = outputs.loss
                 total_loss += loss.item()
-                #复用 encoder_outputs
-                encoder_outputs = outputs.encoder_last_hidden_state
-                #自回归推理
+
+                # 这里不再复用 forward 拿到的 encoder_outputs，
+                # 直接让 generate 自己重新走一遍编码，优先保证评测正确。
                 generated_ids = self.model.generate(
                     input_features=input_features,
-                    encoder_outputs=(encoder_outputs,),
                     attention_mask=attention_mask,
                     language=self.language,     
                     task=self.task,             

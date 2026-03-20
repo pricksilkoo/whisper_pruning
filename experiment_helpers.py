@@ -100,6 +100,8 @@ def load_data(
     num_samples=None,
     data_root="./data/fleurs_full",
     shuffle=None,
+    random_subset=False,
+    seed=42,
 ):
     """
     加载一个 Whisper dataloader。
@@ -119,4 +121,6 @@ def load_data(
         batch_size=batch_size,
         num_samples=num_samples,
         shuffle=shuffle,
+        random_subset=random_subset,
+        seed=seed,
     )

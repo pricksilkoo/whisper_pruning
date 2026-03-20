@@ -104,7 +104,9 @@ SAVE_DIR = f"./outputs/visualize_owl_onetimepruning/{MODEL_NAME}"
 
 PROFILE_SPLIT = "train"
 PROFILE_BATCH_SIZE = 64
-PROFILE_NUM_SAMPLES = 64
+PROFILE_NUM_SAMPLES = 256
+PROFILE_RANDOM_SUBSET = True
+PROFILE_SAMPLE_SEED = 42
 
 EVAL_SPLIT = "test"
 EVAL_BATCH_SIZE = 32
@@ -132,6 +134,8 @@ def main():
         num_samples=PROFILE_NUM_SAMPLES,
         data_root=DATA_ROOT,
         shuffle=True,
+        random_subset=PROFILE_RANDOM_SUBSET,
+        seed=PROFILE_SAMPLE_SEED,
     )
 
     profiler = WAprofiler(model, profile_loader, device=device, dtype=torch_dtype)

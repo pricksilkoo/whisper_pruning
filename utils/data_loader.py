@@ -1,32 +1,33 @@
 import torch
 from dataclasses import dataclass
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
+
 from datasets import load_from_disk
 
 #处理原始数据
-def prepare_dataset(batch,processor):
-
-    audio=batch["audio"]
+def prepare_dataset(batch, processor):
+    audio = batch["audio"]
     inputs = processor.feature_extractor(
-        audio["array"], 
+        audio["array"],
         sampling_rate=audio["sampling_rate"],
-        return_attention_mask=True  
+        return_attention_mask=True,
     )
     batch["input_features"] = inputs.input_features[0]
 
     if "attention_mask" in inputs:
         batch["attention_mask"] = inputs.attention_mask[0]
 
-    batch["labels"]=processor.tokenizer(batch["raw_transcription"]).input_ids
+    batch["labels"] = processor.tokenizer(batch["raw_transcription"]).input_ids
 
     return batch
+
 
 #数据补齐
 @dataclass
 class DataCollatorSpeechSeq2SeqWithPadding:
-    processor:Any
+    processor: Any
+
     def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
-        
         input_features = []
         for feature in features:
             feat_dict = {"input_features": feature["input_features"]}
@@ -44,8 +45,25 @@ class DataCollatorSpeechSeq2SeqWithPadding:
         if (labels[:, 0] == self.processor.tokenizer.bos_token_id).all().cpu().item():
             labels = labels[:, 1:]
         batch["labels"] = labels
-        
+
         return batch
+
+
+def sample_dataset(dataset, num_samples: Optional[int], random_subset: bool, seed: int):
+    """
+    从数据集中截取一部分样本。
+
+    - random_subset=False: 取前 num_samples 条
+    - random_subset=True: 先 shuffle，再取前 num_samples 条
+    """
+    if num_samples is None or num_samples >= len(dataset):
+        return dataset
+
+    if random_subset:
+        dataset = dataset.shuffle(seed=seed)
+
+    return dataset.select(range(num_samples))
+
 
 #数据加载器，对外api
 def get_whisper_dataloader(
@@ -55,6 +73,8 @@ def get_whisper_dataloader(
     batch_size=4,
     num_samples=None,
     shuffle=None,
+    random_subset=False,
+    seed=42,
 ):
     """
     参数说明:
@@ -66,15 +86,18 @@ def get_whisper_dataloader(
     """
     dataset_dict = load_from_disk(data_path)
     dataset = dataset_dict[split]
-
-    if num_samples is not None:
-        dataset = dataset.select(range(min(num_samples, len(dataset))))
+    dataset = sample_dataset(
+        dataset=dataset,
+        num_samples=num_samples,
+        random_subset=random_subset,
+        seed=seed,
+    )
 
     dataset = dataset.map(
         lambda x: prepare_dataset(x, processor),
-        remove_columns=dataset.column_names, 
-        num_proc=1, # 核
-        desc="提取特征"
+        remove_columns=dataset.column_names,
+        num_proc=1,
+        desc="提取特征",
     )
     dataset.cleanup_cache_files()
 

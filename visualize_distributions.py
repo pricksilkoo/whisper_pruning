@@ -100,6 +100,8 @@ SAVE_DIR = f"./outputs/visualize_distributions/{MODEL_NAME}"
 SPLIT = "test"
 BATCH_SIZE = 4
 NUM_SAMPLES = 8
+RANDOM_SUBSET = False
+SAMPLE_SEED = 42
 
 
 def main():
@@ -118,6 +120,8 @@ def main():
         num_samples=NUM_SAMPLES,
         data_root=DATA_ROOT,
         shuffle=False,
+        random_subset=RANDOM_SUBSET,
+        seed=SAMPLE_SEED,
     )
 
     profiler = WAprofiler(model, dataloader, device=device, dtype=torch_dtype)
