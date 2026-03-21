@@ -13,7 +13,7 @@ models/
 # ======================
 data/visualize_*/
 
-outputs
+outputs/
 
 # ======================
 # PYTHON CACHE
