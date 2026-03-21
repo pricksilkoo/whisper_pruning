@@ -50,18 +50,18 @@ PROFILE_GRADIENTS = False
 # 用来最终评测的数据
 EVAL_SPLIT = "test"
 EVAL_BATCH_SIZE = 32
-EVAL_NUM_SAMPLES = 512
+EVAL_NUM_SAMPLES = None
 EVAL_NUM_WORKERS = 4
 
 # 剪枝模式
 # - "uniform": 真正的统一剪枝，所有层都用同一个 sparsity
 # - "layerwise": 先打分，再给不同层分配不同 sparsity
 SPARSITY_MODE = "uniform"  # uniform / layerwise
-PRUNING_METHOD = "wanda"  # wanda / sparsegpt
+PRUNING_METHOD = "sparsegpt"  # wanda / sparsegpt
 UNIFORM_SPARSITY = 0.6
-SPARSEGPT_BLOCKSIZE = 128
+SPARSEGPT_BLOCKSIZE = 256
 SPARSEGPT_DAMPING = 0.01
-SPARSEGPT_MAX_BATCHES = None
+SPARSEGPT_MAX_BATCHES = 8
 
 # 只有在 SPARSITY_MODE="layerwise" 时，这组参数才会生效
 SCORE_METHOD = "owl"  # owl / cv
