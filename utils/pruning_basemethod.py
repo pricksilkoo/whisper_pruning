@@ -15,10 +15,56 @@ class _SparseGPTKernel:
     def __init__(self, layer):
         self.layer = layer
         self.device = layer.weight.device
+        self.layer_name = None
         weight = layer.weight.data.detach().clone().float()
         self.rows, self.columns = weight.shape
         self.hessian = torch.zeros((self.columns, self.columns), device=self.device)
         self.nsamples = 0
+
+    def _compute_hessian_inverse_cholesky(self, hessian, percdamp, dead_mask):
+        hessian = hessian.to(torch.float64)
+        hessian = torch.nan_to_num(hessian, nan=0.0, posinf=0.0, neginf=0.0)
+        hessian = 0.5 * (hessian + hessian.t())
+
+        if dead_mask.any():
+            dead_index = torch.where(dead_mask)[0]
+            hessian[dead_index, dead_index] = 1.0
+
+        diagonal = torch.arange(self.columns, device=self.device)
+        diag_mean = torch.mean(torch.diag(hessian)).item()
+        if not math.isfinite(diag_mean) or diag_mean <= 0:
+            diag_mean = 1.0
+
+        base_damp = max(percdamp * diag_mean, 1e-8)
+        last_error = None
+
+        for retry in range(8):
+            damp = base_damp * (10 ** retry)
+            damped_hessian = hessian.clone()
+            damped_hessian[diagonal, diagonal] += damp
+
+            chol, info = torch.linalg.cholesky_ex(damped_hessian)
+            if int(info.max().item()) != 0:
+                last_error = (
+                    f"cholesky_ex(info={int(info.max().item())}, damp={damp:.4e})"
+                )
+                continue
+
+            hessian_inv = torch.cholesky_inverse(chol)
+            hessian_inv = 0.5 * (hessian_inv + hessian_inv.t())
+
+            inv_chol, inv_info = torch.linalg.cholesky_ex(hessian_inv, upper=True)
+            if int(inv_info.max().item()) == 0:
+                return inv_chol.float()
+
+            last_error = (
+                f"inverse_cholesky_ex(info={int(inv_info.max().item())}, damp={damp:.4e})"
+            )
+
+        layer_name = self.layer_name or "<unknown>"
+        raise RuntimeError(
+            f"SparseGPT 在层 {layer_name} 上做 Hessian 分解失败，最后一次错误: {last_error}"
+        )
 
     def add_batch(self, layer_input):
         if len(layer_input.shape) == 2:
@@ -40,17 +86,12 @@ class _SparseGPTKernel:
         sparsity = float(min(max(sparsity, 0.0), 1.0))
 
         dead = torch.diag(hessian) == 0
-        hessian[dead, dead] = 1
         weight[:, dead] = 0
-
-        damp = percdamp * torch.mean(torch.diag(hessian))
-        diagonal = torch.arange(self.columns, device=self.device)
-        hessian[diagonal, diagonal] += damp
-
-        hessian = torch.linalg.cholesky(hessian)
-        hessian = torch.cholesky_inverse(hessian)
-        hessian = torch.linalg.cholesky(hessian, upper=True)
-        hessian_inv = hessian
+        hessian_inv = self._compute_hessian_inverse_cholesky(
+            hessian=hessian,
+            percdamp=percdamp,
+            dead_mask=dead,
+        )
 
         keep_mask = torch.ones_like(weight, dtype=torch.bool)
 
@@ -342,6 +383,7 @@ class PruningBaseMethod:
         model.eval()
         for layer_name, layer in iterator:
             kernel = _SparseGPTKernel(layer)
+            kernel.layer_name = layer_name
 
             def hook(module, layer_inputs, layer_outputs):
                 del module, layer_outputs
