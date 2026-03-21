@@ -42,7 +42,7 @@ PROFILE_GRADIENTS = False
 
 # 第二步: 重新训练用的数据
 TRAIN_SPLIT = "train"
-TRAIN_BATCH_SIZE = 16
+TRAIN_BATCH_SIZE = 8
 TRAIN_NUM_SAMPLES = None
 TRAIN_RANDOM_SUBSET = False
 TRAIN_SAMPLE_SEED = 42
@@ -64,7 +64,7 @@ EVAL_COMPUTE_LOSS = False
 # 剪枝配置
 PRUNING_METHOD = "wanda"  # wanda / sparsegpt
 SPARSITY_MODE = "uniform"  # uniform / layerwise
-UNIFORM_SPARSITY = 0.6
+UNIFORM_SPARSITY = 0.7
 
 # 只有 layerwise 时生效
 SCORE_METHOD = "owl"  # owl / cv
