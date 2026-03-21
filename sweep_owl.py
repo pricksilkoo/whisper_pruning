@@ -7,25 +7,44 @@ import torch
 import torch.multiprocessing as mp
 
 from experiment_helpers import configure_torch_runtime, load_data, load_model_and_processor
-from utils.WandA_profiler import WAprofiler
 from utils.evaluator import Evaluator
-from utils.pruning_tools import PruningTool
+from utils.signal_collector import SignalCollector
+from utils.pruning_basemethod import PruningBaseMethod
 from utils.scorer import Scorer
 
 
-def one_time_owl_pruning(model, processor, dataloader, scorer, weights, stats, level,
-                         relative_difference, average_retention_ratio, device, dtype):
+def one_time_owl_pruning(
+    model,
+    processor,
+    dataloader,
+    scorer,
+    weights,
+    activations,
+    gradients,
+    level,
+    relative_difference,
+    average_retention_ratio,
+    device,
+    dtype,
+):
     _, retention_ratio = scorer.owl(
-        weights,
-        stats,
+        weights=weights,
+        activations=activations,
+        gradients=gradients,
         level=level,
         relative_difference=relative_difference,
         average_retention_ratio=average_retention_ratio,
     )
     sparsity_dict = {name: 1.0 - score for name, score in retention_ratio.items()}
 
-    pruner = PruningTool()
-    pruner.wanda_unstructured_pruning(weights, stats, sparsity=sparsity_dict)
+    pruner = PruningBaseMethod()
+    pruner.prune(
+        method=PRUNING_METHOD,
+        weights=weights,
+        activations=activations,
+        gradients=gradients,
+        sparsity=sparsity_dict,
+    )
     pruner.apply_to_model(model, log=False)
 
     evaluator = Evaluator(model, processor, dataloader, device, language=DATASET_NAME, dtype=dtype)
@@ -75,8 +94,8 @@ def _sweep_worker(worker_rank, gpu_id, worker_grid, result_path):
         num_workers=0,
     )
 
-    profiler = WAprofiler(model, profile_loader, device=device, dtype=torch_dtype)
-    weights, stats = profiler.getWA()
+    collector = SignalCollector(model, profile_loader, device=device, dtype=torch_dtype)
+    weights, activations, gradients = collector.collect()
     original_weights_backup = {key: value.clone() for key, value in model.state_dict().items()}
 
     eval_loader = load_data(
@@ -100,7 +119,8 @@ def _sweep_worker(worker_rank, gpu_id, worker_grid, result_path):
             dataloader=eval_loader,
             scorer=scorer,
             weights=weights,
-            stats=stats,
+            activations=activations,
+            gradients=gradients,
             level=level,
             relative_difference=relative_difference,
             average_retention_ratio=average_retention_ratio,
@@ -198,6 +218,7 @@ EVAL_SPLIT = "test"
 EVAL_BATCH_SIZE = 32
 EVAL_NUM_SAMPLES = None
 EVAL_NUM_WORKERS = 4
+PRUNING_METHOD = "wanda"
 
 LEVELS = [8, 9]
 RELATIVE_DIFFERENCES = [x * 0.03 for x in range(0, 11)]
@@ -226,8 +247,8 @@ def run_sweep_single_gpu():
         num_workers=PROFILE_NUM_WORKERS,
     )
 
-    profiler = WAprofiler(model, profile_loader, device=device, dtype=torch_dtype)
-    weights, stats = profiler.getWA()
+    collector = SignalCollector(model, profile_loader, device=device, dtype=torch_dtype)
+    weights, activations, gradients = collector.collect()
     original_weights_backup = {key: value.clone() for key, value in model.state_dict().items()}
 
     eval_loader = load_data(
@@ -253,7 +274,8 @@ def run_sweep_single_gpu():
                     dataloader=eval_loader,
                     scorer=scorer,
                     weights=weights,
-                    stats=stats,
+                    activations=activations,
+                    gradients=gradients,
                     level=level,
                     relative_difference=relative_difference,
                     average_retention_ratio=average_retention_ratio,

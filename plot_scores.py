@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from experiment_helpers import load_data, load_model_and_processor
-from utils.WandA_profiler import WAprofiler
+from utils.signal_collector import SignalCollector
 from utils.scorer import Scorer
 
 
@@ -162,14 +162,15 @@ def main():
         seed=SAMPLE_SEED,
     )
 
-    profiler = WAprofiler(model, dataloader, device=device, dtype=torch_dtype)
-    weights, stats = profiler.getWA()
+    collector = SignalCollector(model, dataloader, device=device, dtype=torch_dtype)
+    weights, activations, gradients = collector.collect()
 
     scorer = Scorer()
     scores, retention_ratio = scorer.compute(
         method=SCORE_METHOD,
         weights=weights,
-        activations_stats=stats,
+        activations=activations,
+        gradients=gradients,
         level=LEVEL,
         relative_difference=RELATIVE_DIFFERENCE,
         average_retention_ratio=AVERAGE_RETENTION_RATIO,

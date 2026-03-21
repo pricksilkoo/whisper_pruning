@@ -6,12 +6,26 @@ from whisper.normalizers import BasicTextNormalizer, EnglishTextNormalizer
 
 
 def get_text_normalizer(language):
+    """
+    根据语言选择文本归一化器。
+
+    参数:
+    - language: 语言名或语言代码，例如 `en`。
+    """
     if language and language.lower().startswith("en"):
         return EnglishTextNormalizer()
     return BasicTextNormalizer()
 
 
 def compute_metrics(references, predictions, normalizer):
+    """
+    计算 CER/WER。
+
+    参数:
+    - references: 参考文本列表。
+    - predictions: 模型预测文本列表。
+    - normalizer: 文本归一化函数或 normalizer 对象。
+    """
     clean_references = [normalizer(text) for text in references]
     clean_predictions = [normalizer(text) for text in predictions]
     cer = jiwer.cer(clean_references, clean_predictions)
@@ -20,6 +34,17 @@ def compute_metrics(references, predictions, normalizer):
 
 
 def print_evaluation_summary(avg_loss, cer, wer, references, predictions, log=True):
+    """
+    打印评测摘要和若干条样例。
+
+    参数:
+    - avg_loss: 平均 loss。
+    - cer: 字符错误率。
+    - wer: 词错误率。
+    - references: 原始参考文本列表。
+    - predictions: 原始预测文本列表。
+    - log: 是否打印日志。
+    """
     if not predictions or not log:
         return
 
@@ -43,6 +68,19 @@ class Evaluator:
     def __init__(self, model, processor, dataloader, device, 
                  language='en', task="transcribe", dtype=None,
                  normalizer=None, generation_kwargs=None, compute_loss=True):
+        """
+        参数:
+        - model: Whisper 模型。
+        - processor: WhisperProcessor。
+        - dataloader: 评测数据 dataloader。
+        - device: 推理设备。
+        - language: generate 时使用的语言。
+        - task: Whisper generate 的任务类型，通常是 `transcribe`。
+        - dtype: 输入特征送入模型时使用的 dtype。
+        - normalizer: 自定义文本归一化器；不传则按 language 自动选择。
+        - generation_kwargs: 额外的 generate 参数字典。
+        - compute_loss: 是否顺带计算前向 loss。
+        """
         self.model = model
         self.processor = processor
         self.dataloader = dataloader
@@ -60,6 +98,10 @@ class Evaluator:
         """
         generate 比普通 forward 更吃显存，尤其是 beam search。
         所以这里支持把一个大 batch 拆成多个小块，逐块解码。
+
+        参数:
+        - input_features: 当前 batch 的输入特征张量。
+        - attention_mask: 当前 batch 的 attention mask，可为 `None`。
         """
         batch_size = input_features.shape[0]
         chunk_size = self.generation_batch_size or batch_size
@@ -94,6 +136,10 @@ class Evaluator:
     def evaluate(self, log = True, return_details=False):
         """
         运行完整的推理评估，计算 Loss (交叉熵)，计算 CER (字符错误率)， WER (词错误率)。
+
+        参数:
+        - log: 是否打印评测摘要。
+        - return_details: 是否返回详细结果字典；否则只返回 `(cer, wer, avg_loss)`。
         """
         self.model.eval()
         

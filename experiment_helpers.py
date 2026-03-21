@@ -2,11 +2,11 @@
 这个文件只放少量“重复但简单”的辅助函数。
 
 你平时主要修改这些顶层脚本就够了：
-- evaluate_model.py
-- one_time_pruning_evaluation.py
-- visualize_scores.py
-- visualize_distributions.py
-- visualize_owl_onetimepruning.py
+- eval.py
+- prune_once.py
+- plot_scores.py
+- plot_distributions.py
+- sweep_owl.py
 
 通常不需要改这个文件。
 """
@@ -16,7 +16,7 @@ import os
 import torch
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-from utils.data_loader import get_whisper_dataloader
+from utils.dataloader import get_whisper_dataloader
 
 
 DTYPE_MAP = {

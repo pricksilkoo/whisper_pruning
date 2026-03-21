@@ -3,7 +3,7 @@
 
 以后你最常改的地方，就是下面这段配置。
 改完后直接运行：
-    python evaluate_model.py
+    python eval.py
 """
 
 import os

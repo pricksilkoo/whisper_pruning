@@ -1,78 +1,53 @@
 # Whisper Pruning
 
-这版结构尽量保持简单。
+现在项目分成两层:
 
-你以后主要只需要看和改这几个顶层脚本：
+- 顶层脚本: 负责实验编排，尽量保持简单
+- `utils/`: 负责通用工具，后面你扩展新方法主要改这里
 
-- [`evaluate_model.py`](/Users/hehaoran/Developer/whisper_pruning/evaluate_model.py)
-- [`one_time_pruning_evaluation.py`](/Users/hehaoran/Developer/whisper_pruning/one_time_pruning_evaluation.py)
-- [`visualize_scores.py`](/Users/hehaoran/Developer/whisper_pruning/visualize_scores.py)
-- [`visualize_distributions.py`](/Users/hehaoran/Developer/whisper_pruning/visualize_distributions.py)
-- [`visualize_owl_onetimepruning.py`](/Users/hehaoran/Developer/whisper_pruning/visualize_owl_onetimepruning.py)
+## 推荐入口
 
-这些脚本的开头都有一块：
-
-```python
-# 只改这里
-```
-
-你平时基本只改那一块就够了。
+- 基线评测: [`eval.py`](/Users/hehaoran/Developer/whisper_pruning/eval.py)
+- 一次性剪枝评测: [`prune_once.py`](/Users/hehaoran/Developer/whisper_pruning/prune_once.py)
+- 画层分数: [`plot_scores.py`](/Users/hehaoran/Developer/whisper_pruning/plot_scores.py)
+- 画分布: [`plot_distributions.py`](/Users/hehaoran/Developer/whisper_pruning/plot_distributions.py)
+- 扫描 OWL 参数: [`sweep_owl.py`](/Users/hehaoran/Developer/whisper_pruning/sweep_owl.py)
 
 ## 怎么跑
 
-基线评测：
-
 ```bash
-python evaluate_model.py
+python eval.py
+python prune_once.py
+python plot_scores.py
+python plot_distributions.py
+python sweep_owl.py
 ```
 
-一次性剪枝评测：
+## 工具层结构
 
-```bash
-python one_time_pruning_evaluation.py
-```
+你后面主要看这些文件:
 
-画层分数：
-
-```bash
-python visualize_scores.py
-```
-
-画层分布：
-
-```bash
-python visualize_distributions.py
-```
-
-扫描 OWL 参数并画图：
-
-```bash
-python visualize_owl_onetimepruning.py
-```
-
-## 每个文件是干什么的
-
-- [`experiment_helpers.py`](/Users/hehaoran/Developer/whisper_pruning/experiment_helpers.py)
-  只放很少量的公共辅助函数，比如加载模型、加载数据。平时一般不用改。
-
-- [`utils/WandA_profiler.py`](/Users/hehaoran/Developer/whisper_pruning/utils/WandA_profiler.py)
-  收集线性层权重和激活统计。
-
-- [`utils/scorer.py`](/Users/hehaoran/Developer/whisper_pruning/utils/scorer.py)
-  根据权重和激活值给每层打分。
-
-- [`utils/pruning_tools.py`](/Users/hehaoran/Developer/whisper_pruning/utils/pruning_tools.py)
-  真正执行剪枝。
+- [`utils/dataloader.py`](/Users/hehaoran/Developer/whisper_pruning/utils/dataloader.py)
+  数据准备和 dataloader。
 
 - [`utils/evaluator.py`](/Users/hehaoran/Developer/whisper_pruning/utils/evaluator.py)
   负责评测 CER / WER / Loss。
 
-## 最推荐的阅读顺序
+- [`utils/signal_collector.py`](/Users/hehaoran/Developer/whisper_pruning/utils/signal_collector.py)
+  负责统一收集 `weights / activations / gradients`。激活和梯度默认是统计字典，文件里也提供了均值/RMS 的辅助函数。
 
-如果你现在只想先看懂主流程，建议按这个顺序读：
+- [`utils/pruning_basemethod.py`](/Users/hehaoran/Developer/whisper_pruning/utils/pruning_basemethod.py)
+  底层剪枝方法，当前内置 `wanda` 和 `sparsegpt`。
 
-1. [`one_time_pruning_evaluation.py`](/Users/hehaoran/Developer/whisper_pruning/one_time_pruning_evaluation.py)
-2. [`utils/WandA_profiler.py`](/Users/hehaoran/Developer/whisper_pruning/utils/WandA_profiler.py)
+- [`utils/scorer.py`](/Users/hehaoran/Developer/whisper_pruning/utils/scorer.py)
+  非均匀剪枝打分器。后面你新增方法时，统一按 `weights / activations / gradients` 这个接口写。
+
+如果你的新打分方法需要梯度，记得在 [`prune_once.py`](/Users/hehaoran/Developer/whisper_pruning/prune_once.py) 里把 `PROFILE_GRADIENTS = True`。
+
+## 推荐阅读顺序
+
+1. [`prune_once.py`](/Users/hehaoran/Developer/whisper_pruning/prune_once.py)
+2. [`utils/signal_collector.py`](/Users/hehaoran/Developer/whisper_pruning/utils/signal_collector.py)
 3. [`utils/scorer.py`](/Users/hehaoran/Developer/whisper_pruning/utils/scorer.py)
-4. [`utils/pruning_tools.py`](/Users/hehaoran/Developer/whisper_pruning/utils/pruning_tools.py)
+4. [`utils/pruning_basemethod.py`](/Users/hehaoran/Developer/whisper_pruning/utils/pruning_basemethod.py)
 5. [`utils/evaluator.py`](/Users/hehaoran/Developer/whisper_pruning/utils/evaluator.py)

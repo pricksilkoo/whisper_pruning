@@ -6,7 +6,7 @@
 4. 评测剪枝后的模型
 
 以后你主要改下面的配置块，然后直接运行：
-    python one_time_pruning_evaluation.py
+    python prune_once.py
 """
 
 import os
@@ -16,9 +16,9 @@ import torch
 import torch.multiprocessing as mp
 
 from experiment_helpers import configure_torch_runtime, load_data, load_model_and_processor
-from utils.WandA_profiler import WAprofiler
 from utils.evaluator import Evaluator, compute_metrics, get_text_normalizer, print_evaluation_summary
-from utils.pruning_tools import PruningTool
+from utils.signal_collector import SignalCollector
+from utils.pruning_basemethod import PruningBaseMethod
 from utils.scorer import Scorer
 
 
@@ -45,6 +45,7 @@ PROFILE_NUM_SAMPLES = 256
 PROFILE_RANDOM_SUBSET = True
 PROFILE_SAMPLE_SEED = 42
 PROFILE_NUM_WORKERS = 4
+PROFILE_GRADIENTS = False
 
 # 用来最终评测的数据
 EVAL_SPLIT = "test"
@@ -56,6 +57,7 @@ EVAL_NUM_WORKERS = 4
 # - "uniform": 真正的统一剪枝，所有层都用同一个 sparsity
 # - "layerwise": 先打分，再给不同层分配不同 sparsity
 SPARSITY_MODE = "uniform"  # uniform / layerwise
+PRUNING_METHOD = "wanda"  # wanda / sparsegpt
 UNIFORM_SPARSITY = 0.6
 
 # 只有在 SPARSITY_MODE="layerwise" 时，这组参数才会生效
@@ -75,14 +77,14 @@ def get_profile_device():
     return None
 
 
-def build_sparsity(weights, stats):
+def build_sparsity(weights, activations, gradients):
     """
     根据配置决定这次到底是:
     - 真 uniform 剪枝
     - 还是 layerwise 剪枝
     """
     if SPARSITY_MODE == "uniform":
-        print(f"✂️ 使用 uniform Wanda，统一稀疏度 = {UNIFORM_SPARSITY:.2%}")
+        print(f"✂️ 使用 uniform {PRUNING_METHOD}，统一稀疏度 = {UNIFORM_SPARSITY:.2%}")
         return UNIFORM_SPARSITY
 
     if SPARSITY_MODE == "layerwise":
@@ -90,7 +92,8 @@ def build_sparsity(weights, stats):
         scores, retention_ratio = scorer.compute(
             method=SCORE_METHOD,
             weights=weights,
-            activations_stats=stats,
+            activations=activations,
+            gradients=gradients,
             level=LEVEL,
             relative_difference=RELATIVE_DIFFERENCE,
             average_retention_ratio=AVERAGE_RETENTION_RATIO,
@@ -251,15 +254,24 @@ def main():
         text_field=TEXT_FIELD,
     )
 
-    profiler = WAprofiler(model, profile_loader, device=device, dtype=torch_dtype)
-    weights, stats = profiler.getWA()
+    collector = SignalCollector(model, profile_loader, device=device, dtype=torch_dtype)
+    weights, activations, gradients = collector.collect(
+        collect_activations=True,
+        collect_gradients=PROFILE_GRADIENTS,
+    )
 
     # 第二步：生成这次要用的 sparsity
-    sparsity = build_sparsity(weights, stats)
+    sparsity = build_sparsity(weights, activations, gradients)
 
     # 第三步：执行剪枝
-    pruner = PruningTool()
-    pruner.wanda_unstructured_pruning(weights, stats, sparsity=sparsity)
+    pruner = PruningBaseMethod()
+    pruner.prune(
+        method=PRUNING_METHOD,
+        weights=weights,
+        activations=activations,
+        gradients=gradients,
+        sparsity=sparsity,
+    )
     pruner.apply_to_model(model)
 
     # 第四步：评测剪枝后的模型
@@ -270,7 +282,7 @@ def main():
 
             # 主进程释放显存，让 4 张卡都能留给评测子进程。
             model.to("cpu")
-            del model, pruner, weights, stats
+            del model, pruner, weights, activations, gradients
             torch.cuda.empty_cache()
 
             evaluate_checkpoint_multi_gpu(checkpoint_path)

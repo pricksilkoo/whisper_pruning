@@ -6,7 +6,7 @@ import seaborn as sns
 import torch
 
 from experiment_helpers import load_data, load_model_and_processor
-from utils.WandA_profiler import WAprofiler
+from utils.signal_collector import SignalCollector
 
 
 def to_numpy_flat(data):
@@ -15,10 +15,10 @@ def to_numpy_flat(data):
     return np.array(data).flatten()
 
 
-def visualize_distributions(weights, stats, save_dir, model_name):
-    common_layers = sorted(list(set(weights.keys()) & set(stats.keys())))
+def visualize_distributions(weights, activations, save_dir, model_name):
+    common_layers = sorted(list(set(weights.keys()) & set(activations.keys())))
     if not common_layers:
-        print("❌ 错误：weights 和 stats 字典中没有匹配的层名。")
+        print("❌ 错误：weights 和 activations 字典中没有匹配的层名。")
         return
 
     print("\n" + "=" * 50)
@@ -49,7 +49,7 @@ def visualize_distributions(weights, stats, save_dir, model_name):
     print(f"\n⏳ 正在处理并绘制 [{selected_layer}] 的数据，请稍候...")
 
     w_raw = torch.abs(weights[selected_layer])
-    s_raw = (stats[selected_layer]["sq_sum"] / stats[selected_layer]["count"]).sqrt()
+    s_raw = (activations[selected_layer]["sq_sum"] / activations[selected_layer]["count"]).sqrt()
     prod_raw = w_raw * s_raw
 
     w_data = to_numpy_flat(w_raw)
@@ -124,9 +124,9 @@ def main():
         seed=SAMPLE_SEED,
     )
 
-    profiler = WAprofiler(model, dataloader, device=device, dtype=torch_dtype)
-    weights, stats = profiler.getWA()
-    visualize_distributions(weights, stats, SAVE_DIR, MODEL_NAME)
+    collector = SignalCollector(model, dataloader, device=device, dtype=torch_dtype)
+    weights, activations, _ = collector.collect()
+    visualize_distributions(weights, activations, SAVE_DIR, MODEL_NAME)
 
 
 if __name__ == "__main__":
