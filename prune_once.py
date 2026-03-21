@@ -58,10 +58,10 @@ EVAL_NUM_WORKERS = 4
 # - "layerwise": 先打分，再给不同层分配不同 sparsity
 SPARSITY_MODE = "uniform"  # uniform / layerwise
 PRUNING_METHOD = "sparsegpt"  # wanda / sparsegpt
-UNIFORM_SPARSITY = 0.6
+UNIFORM_SPARSITY = 0.7
 SPARSEGPT_BLOCKSIZE = 256
 SPARSEGPT_DAMPING = 0.01
-SPARSEGPT_MAX_BATCHES = 8
+SPARSEGPT_MAX_BATCHES = 16
 
 # 只有在 SPARSITY_MODE="layerwise" 时，这组参数才会生效
 SCORE_METHOD = "owl"  # owl / cv

@@ -61,10 +61,10 @@ EVAL_NUM_WORKERS = 3
 
 # 剪枝方式
 PRUNING_METHOD = "wanda"  # wanda / sparsegpt
-SPARSITY_MODE = "uniform"  # uniform / layerwise
+SPARSITY_MODE = "layerwise"  # uniform / layerwise
 SCORE_METHOD = "owl"  # 只有 layerwise 时生效
 LEVEL = 7
-RELATIVE_DIFFERENCE = 0.0
+RELATIVE_DIFFERENCE = 0.1
 
 # SparseGPT 相关参数
 SPARSEGPT_BLOCKSIZE = 128
