@@ -17,6 +17,7 @@ def one_time_owl_pruning(
     model,
     processor,
     dataloader,
+    profile_loader,
     scorer,
     weights,
     activations,
@@ -44,6 +45,14 @@ def one_time_owl_pruning(
         activations=activations,
         gradients=gradients,
         sparsity=sparsity_dict,
+        model=model,
+        dataloader=profile_loader,
+        device=device,
+        dtype=dtype,
+        blocksize=SPARSEGPT_BLOCKSIZE,
+        damping=SPARSEGPT_DAMPING,
+        max_batches=SPARSEGPT_MAX_BATCHES,
+        log=False,
     )
     pruner.apply_to_model(model, log=False)
 
@@ -117,6 +126,7 @@ def _sweep_worker(worker_rank, gpu_id, worker_grid, result_path):
             model=model,
             processor=processor,
             dataloader=eval_loader,
+            profile_loader=profile_loader,
             scorer=scorer,
             weights=weights,
             activations=activations,
@@ -219,6 +229,9 @@ EVAL_BATCH_SIZE = 32
 EVAL_NUM_SAMPLES = None
 EVAL_NUM_WORKERS = 4
 PRUNING_METHOD = "wanda"
+SPARSEGPT_BLOCKSIZE = 128
+SPARSEGPT_DAMPING = 0.01
+SPARSEGPT_MAX_BATCHES = None
 
 LEVELS = [8, 9]
 RELATIVE_DIFFERENCES = [x * 0.03 for x in range(0, 11)]
@@ -272,6 +285,7 @@ def run_sweep_single_gpu():
                     model=model,
                     processor=processor,
                     dataloader=eval_loader,
+                    profile_loader=profile_loader,
                     scorer=scorer,
                     weights=weights,
                     activations=activations,

@@ -59,6 +59,9 @@ EVAL_NUM_WORKERS = 4
 SPARSITY_MODE = "uniform"  # uniform / layerwise
 PRUNING_METHOD = "wanda"  # wanda / sparsegpt
 UNIFORM_SPARSITY = 0.6
+SPARSEGPT_BLOCKSIZE = 128
+SPARSEGPT_DAMPING = 0.01
+SPARSEGPT_MAX_BATCHES = None
 
 # 只有在 SPARSITY_MODE="layerwise" 时，这组参数才会生效
 SCORE_METHOD = "owl"  # owl / cv
@@ -271,6 +274,13 @@ def main():
         activations=activations,
         gradients=gradients,
         sparsity=sparsity,
+        model=model,
+        dataloader=profile_loader,
+        device=device,
+        dtype=torch_dtype,
+        blocksize=SPARSEGPT_BLOCKSIZE,
+        damping=SPARSEGPT_DAMPING,
+        max_batches=SPARSEGPT_MAX_BATCHES,
     )
     pruner.apply_to_model(model)
 
