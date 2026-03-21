@@ -130,21 +130,17 @@ def build_round_sparsity(
     if target_linear_sparsity <= current_linear_sparsity + TARGET_TOLERANCE:
         return 0.0 if SPARSITY_MODE == "uniform" else {name: 0.0 for name in weights}
 
-    current_remaining = max(1e-12, 1.0 - current_linear_sparsity)
-    target_remaining = max(0.0, 1.0 - target_linear_sparsity)
-    average_retention_ratio = target_remaining / current_remaining
-    average_retention_ratio = float(min(max(average_retention_ratio, 0.0), 1.0))
-
     if SPARSITY_MODE == "uniform":
-        additional_sparsity = 1.0 - average_retention_ratio
         print(
             f"✂️ 这一轮使用 uniform {PRUNING_METHOD} | "
             f"当前线性稀疏度 {current_linear_sparsity:.2%} -> 目标 {target_linear_sparsity:.2%} | "
-            f"额外稀疏度 {additional_sparsity:.2%}"
+            f"目标总稀疏度 {target_linear_sparsity:.2%}"
         )
-        return additional_sparsity
+        return float(target_linear_sparsity)
 
     if SPARSITY_MODE == "layerwise":
+        average_retention_ratio = 1.0 - target_linear_sparsity
+        average_retention_ratio = float(min(max(average_retention_ratio, 0.0), 1.0))
         scorer = Scorer()
         scores, retention_ratio = scorer.compute(
             method=SCORE_METHOD,
@@ -158,7 +154,7 @@ def build_round_sparsity(
         print(
             f"💻 这一轮使用 {SCORE_METHOD} 打分 | "
             f"当前线性稀疏度 {current_linear_sparsity:.2%} -> 目标 {target_linear_sparsity:.2%} | "
-            f"额外平均保留率 {average_retention_ratio:.2%} | 共 {len(scores)} 层"
+            f"目标平均保留率 {average_retention_ratio:.2%} | 共 {len(scores)} 层"
         )
         return {name: 1.0 - ratio for name, ratio in retention_ratio.items()}
 
