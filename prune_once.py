@@ -58,7 +58,7 @@ EVAL_NUM_WORKERS = 4
 # - "layerwise": 先打分，再给不同层分配不同 sparsity
 SPARSITY_MODE = "uniform"  # uniform / layerwise
 PRUNING_METHOD = "sparsegpt"  # wanda / sparsegpt
-UNIFORM_SPARSITY = 0.8
+UNIFORM_SPARSITY = 0.7
 SPARSEGPT_BLOCKSIZE = 256
 SPARSEGPT_DAMPING = 0.01
 SPARSEGPT_MAX_BATCHES = 16

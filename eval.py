@@ -23,8 +23,8 @@ from utils.evaluator import Evaluator, compute_metrics, get_text_normalizer, pri
 # 1. `"whisper-large-v3-original"`: 按旧逻辑从 `MODEL_ROOT/MODEL_NAME` 加载
 # 2. `"./models/whisper-large-v3-original"`: 直接加载本地模型目录
 # 3. `"./outputs/prune_once/...pt"`: 加载剪枝后保存的 checkpoint
-MODEL_NAME = "whisper-large-v3-original"
-DATASET_NAME = "en"
+MODEL_NAME = "./outputs/prune_once/whisper-large-v3-original/pruned_sparsegpt_uniform_sp0.7000.pt"
+DATASET_NAME = "zh"
 DTYPE = "float16"
 DEVICE = None
 
@@ -34,7 +34,7 @@ GPU_IDS = [0, 1, 2, 3]
 USE_MULTI_GPU_EVAL = True
 
 SPLIT = "test"
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 NUM_SAMPLES = None
 NUM_WORKERS = 4
 TEXT_FIELD = "raw_transcription"
