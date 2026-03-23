@@ -63,6 +63,11 @@ SPARSEGPT_BLOCKSIZE = 256
 SPARSEGPT_DAMPING = 0.01
 SPARSEGPT_MAX_BATCHES = 16
 
+# 保存
+SAVE_DIR = f"./outputs/prune_once/{MODEL_NAME}"
+SAVE_MODEL = True
+SAVE_MASKS = True
+
 # 只有在 SPARSITY_MODE="layerwise" 时，这组参数才会生效
 SCORE_METHOD = "owl"  # owl / cv
 LEVEL = 7
@@ -149,6 +154,8 @@ def _evaluate_checkpoint_worker(worker_rank, gpu_id, checkpoint_path, result_dir
     )
 
     state_dict = torch.load(checkpoint_path, map_location="cpu")
+    if isinstance(state_dict, dict) and "model_state_dict" in state_dict:
+        state_dict = state_dict["model_state_dict"]
     model.load_state_dict(state_dict)
 
     eval_loader = load_data(
@@ -232,6 +239,71 @@ def evaluate_checkpoint_multi_gpu(checkpoint_path):
     return cer, wer, avg_loss
 
 
+def build_module_masks(model, masks):
+    """
+    把 pruner 产出的 mask 对齐到当前模型模块设备上，便于保存。
+    """
+    module_masks = {}
+    for name, module in model.named_modules():
+        if name not in masks:
+            continue
+        module_masks[name] = masks[name].to(device=module.weight.device)
+    return module_masks
+
+
+def build_save_filename(sparsity):
+    """
+    生成带有剪枝方法和稀疏度信息的文件名。
+    """
+    method_tag = PRUNING_METHOD.lower()
+    mode_tag = SPARSITY_MODE.lower()
+
+    if isinstance(sparsity, dict):
+        avg_sparsity = (
+            sum(float(value) for value in sparsity.values()) / len(sparsity) if sparsity else 0.0
+        )
+        return f"pruned_{method_tag}_{mode_tag}_{SCORE_METHOD.lower()}_avgsp{avg_sparsity:.4f}.pt"
+
+    return f"pruned_{method_tag}_{mode_tag}_sp{float(sparsity):.4f}.pt"
+
+
+def save_pruned_checkpoint(model, module_masks, sparsity):
+    """
+    保存一次性剪枝后的 checkpoint 和可选 mask。
+    """
+    if not SAVE_MODEL and not SAVE_MASKS:
+        return None
+
+    os.makedirs(SAVE_DIR, exist_ok=True)
+    checkpoint = {
+        "config": {
+            "model_name": MODEL_NAME,
+            "dataset_name": DATASET_NAME,
+            "dtype": DTYPE,
+            "pruning_method": PRUNING_METHOD,
+            "sparsity_mode": SPARSITY_MODE,
+            "sparsity": sparsity,
+            "sparsegpt_blocksize": SPARSEGPT_BLOCKSIZE,
+            "sparsegpt_damping": SPARSEGPT_DAMPING,
+            "sparsegpt_max_batches": SPARSEGPT_MAX_BATCHES,
+        },
+    }
+
+    if SAVE_MODEL:
+        checkpoint["model_state_dict"] = {
+            name: tensor.detach().cpu() for name, tensor in model.state_dict().items()
+        }
+    if SAVE_MASKS:
+        checkpoint["masks"] = {name: mask.detach().cpu() for name, mask in module_masks.items()}
+
+    checkpoint_filename = build_save_filename(sparsity)
+    checkpoint_path = os.path.join(SAVE_DIR, checkpoint_filename)
+    torch.save(checkpoint, checkpoint_path)
+    checkpoint_path = os.path.abspath(checkpoint_path)
+    print(f"💾 已保存到: {checkpoint_path}")
+    return checkpoint_path
+
+
 def main():
     configure_torch_runtime()
 
@@ -283,19 +355,33 @@ def main():
         max_batches=SPARSEGPT_MAX_BATCHES,
     )
     pruner.apply_to_model(model)
+    module_masks = build_module_masks(model, pruner.masks)
+    saved_checkpoint_path = save_pruned_checkpoint(
+        model=model,
+        module_masks=module_masks,
+        sparsity=sparsity,
+    )
 
     # 第四步：评测剪枝后的模型
     if USE_MULTI_GPU_EVAL and torch.cuda.is_available() and len(GPU_IDS) > 1:
-        with tempfile.TemporaryDirectory(prefix="whisper_pruned_model_") as temp_dir:
-            checkpoint_path = os.path.join(temp_dir, "pruned_state_dict.pt")
+        if saved_checkpoint_path is not None and SAVE_MODEL:
+            checkpoint_path = saved_checkpoint_path
+            temp_dir = None
+        else:
+            temp_dir = tempfile.TemporaryDirectory(prefix="whisper_pruned_model_")
+            checkpoint_path = os.path.join(temp_dir.name, "pruned_state_dict.pt")
             torch.save(model.state_dict(), checkpoint_path)
 
+        try:
             # 主进程释放显存，让 4 张卡都能留给评测子进程。
             model.to("cpu")
-            del model, pruner, weights, activations, gradients
+            del model, pruner, weights, activations, gradients, module_masks
             torch.cuda.empty_cache()
 
             evaluate_checkpoint_multi_gpu(checkpoint_path)
+        finally:
+            if temp_dir is not None:
+                temp_dir.cleanup()
     else:
         evaluate_current_model(model, processor, device, torch_dtype)
 
