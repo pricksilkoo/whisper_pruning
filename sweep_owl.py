@@ -233,9 +233,9 @@ SPARSEGPT_BLOCKSIZE = 128
 SPARSEGPT_DAMPING = 0.01
 SPARSEGPT_MAX_BATCHES = None
 
-LEVELS = [6, 7, 8]
-RELATIVE_DIFFERENCES = [x * 0.04 for x in range(0, 9)]
-AVERAGE_RETENTION_RATIOS = [x * 0.02 for x in range(25, 36)]
+LEVELS = [7]
+RELATIVE_DIFFERENCES = [x * 0.04 for x in range(0, 6)]
+AVERAGE_RETENTION_RATIOS = [x * 0.02 for x in range(30, 36)]
 # ============================================================
 
 
