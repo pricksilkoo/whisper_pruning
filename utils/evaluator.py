@@ -5,6 +5,50 @@ import jiwer
 from whisper.normalizers import BasicTextNormalizer, EnglishTextNormalizer
 
 
+WHISPER_LANGUAGE_ALIASES = {
+    "en": "english",
+    "english": "english",
+    "zh": "chinese",
+    "chinese": "chinese",
+    "cmn_hans_cn": "chinese",
+    "ja": "japanese",
+    "jp": "japanese",
+    "japanese": "japanese",
+    "ko": "korean",
+    "kr": "korean",
+    "korean": "korean",
+    "fr": "french",
+    "french": "french",
+    "de": "german",
+    "german": "german",
+    "es": "spanish",
+    "spanish": "spanish",
+    "ru": "russian",
+    "russian": "russian",
+    "hi": "hindi",
+    "hindi": "hindi",
+    "ar": "arabic",
+    "arabic": "arabic",
+}
+
+
+def resolve_whisper_language(language):
+    """
+    把数据集缩写或语言代码映射成 Whisper generate 更稳定的语言名。
+    """
+    if language is None:
+        return None
+
+    language = str(language).strip()
+    if not language:
+        return None
+
+    if language.startswith("<|") and language.endswith("|>"):
+        return language
+
+    return WHISPER_LANGUAGE_ALIASES.get(language.lower(), language)
+
+
 def get_text_normalizer(language):
     """
     根据语言选择文本归一化器。
@@ -88,10 +132,20 @@ class Evaluator:
         self.normalizer = normalizer or get_text_normalizer(language)
         self.task=task
         self.language=language
+        self.whisper_language = resolve_whisper_language(language)
         self.dtype=dtype or next(model.parameters()).dtype
         generation_kwargs = dict(generation_kwargs or {})
         self.generation_batch_size = generation_kwargs.pop("generation_batch_size", None)
         self.generation_kwargs = generation_kwargs
+        self.forced_decoder_ids = self.generation_kwargs.get("forced_decoder_ids")
+        if self.forced_decoder_ids is None and self.whisper_language is not None:
+            try:
+                self.forced_decoder_ids = self.processor.get_decoder_prompt_ids(
+                    language=self.whisper_language,
+                    task=self.task,
+                )
+            except Exception:
+                self.forced_decoder_ids = None
         self.compute_loss = compute_loss
 
     def _generate_in_chunks(self, input_features, attention_mask):
@@ -116,10 +170,16 @@ class Evaluator:
             generate_kwargs = {
                 "input_features": chunk_input_features,
                 "attention_mask": chunk_attention_mask,
-                "language": self.language,
-                "task": self.task,
             }
             generate_kwargs.update(self.generation_kwargs)
+            if "forced_decoder_ids" not in generate_kwargs:
+                if self.forced_decoder_ids is not None:
+                    generate_kwargs["forced_decoder_ids"] = self.forced_decoder_ids
+                else:
+                    if self.whisper_language is not None:
+                        generate_kwargs.setdefault("language", self.whisper_language)
+                    if self.task is not None:
+                        generate_kwargs.setdefault("task", self.task)
 
             generated_ids = self.model.generate(**generate_kwargs)
             chunk_predictions = self.processor.batch_decode(generated_ids, skip_special_tokens=True)
