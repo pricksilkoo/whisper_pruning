@@ -71,6 +71,9 @@ def get_device(device=None):
 
 
 def get_model_path(model_name, model_root="./models"):
+    model_name = os.path.expanduser(str(model_name))
+    if os.path.isabs(model_name) or os.path.exists(model_name) or os.path.sep in model_name:
+        return model_name
     return os.path.join(model_root, model_name)
 
 
@@ -96,6 +99,31 @@ def load_model_and_processor(
     torch_dtype = get_torch_dtype(dtype)
     device = get_device(device)
     model_path = get_model_path(model_name, model_root=model_root)
+
+    if os.path.isfile(model_path):
+        checkpoint_path = model_path
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        checkpoint_config = checkpoint.get("config", {}) if isinstance(checkpoint, dict) else {}
+        state_dict = checkpoint.get("model_state_dict") if isinstance(checkpoint, dict) else None
+        if state_dict is None:
+            state_dict = checkpoint
+
+        base_model_name = checkpoint_config.get("model_name")
+        if not base_model_name:
+            raise ValueError(
+                "剪枝 checkpoint 缺少 `config.model_name`，无法定位原始 Whisper 模型。"
+            )
+
+        base_model_path = get_model_path(base_model_name, model_root=model_root)
+        print(f"🚀 正在加载原始模型骨架: {base_model_path}")
+        print(f"📦 正在加载剪枝 checkpoint: {checkpoint_path}")
+        model = WhisperForConditionalGeneration.from_pretrained(
+            base_model_path,
+            torch_dtype=torch_dtype,
+        ).to(device)
+        model.load_state_dict(state_dict)
+        processor = WhisperProcessor.from_pretrained(base_model_path)
+        return model, processor, device, torch_dtype
 
     print(f"🚀 正在加载模型: {model_path}")
     model = WhisperForConditionalGeneration.from_pretrained(

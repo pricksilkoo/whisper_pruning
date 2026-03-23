@@ -19,6 +19,10 @@ from utils.evaluator import Evaluator, compute_metrics, get_text_normalizer, pri
 # ============================================================
 # 只改这里
 # ============================================================
+# `MODEL_NAME` 现在支持三种写法:
+# 1. `"whisper-large-v3-original"`: 按旧逻辑从 `MODEL_ROOT/MODEL_NAME` 加载
+# 2. `"./models/whisper-large-v3-original"`: 直接加载本地模型目录
+# 3. `"./outputs/prune_once/...pt"`: 加载剪枝后保存的 checkpoint
 MODEL_NAME = "whisper-large-v3-original"
 DATASET_NAME = "en"
 DTYPE = "float16"
